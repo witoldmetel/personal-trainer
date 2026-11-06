@@ -282,7 +282,6 @@ const sessionSets: SessionSet[] = [
 
 export function createSeedState(): StoreState {
   return {
-    authenticated: false,
     programs,
     programDays,
     exercises,

@@ -57,7 +57,6 @@ export type LoggerRow = {
 }
 
 export type StoreState = {
-  authenticated: boolean
   programs: Program[]
   programDays: ProgramDay[]
   exercises: Exercise[]

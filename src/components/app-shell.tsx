@@ -6,9 +6,12 @@ import {
   History,
   LayoutDashboard,
   LayoutList,
+  LogOut,
   Upload,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { useAuth } from '@/lib/auth'
 import { formatDate, todayIso } from '@/lib/dates'
 import { useStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -40,6 +43,7 @@ function statusBadge(
 
 export function AppShell() {
   const { todaySession } = useStore()
+  const { username, signOut } = useAuth()
   const location = useLocation()
   const session = todaySession()
   const historyDetail = location.pathname.startsWith('/history/')
@@ -79,11 +83,27 @@ export function AppShell() {
                 {formatDate(todayIso())}
               </p>
             </div>
-            {historyDetail ? (
-              <Badge variant="outline">Past session</Badge>
-            ) : (
-              statusBadge(session?.status)
-            )}
+            <div className="flex items-center gap-2">
+              {username ? (
+                <span className="hidden text-xs text-muted-foreground md:inline">
+                  @{username}
+                </span>
+              ) : null}
+              {historyDetail ? (
+                <Badge variant="outline">Past session</Badge>
+              ) : (
+                statusBadge(session?.status)
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => void signOut()}
+              >
+                <LogOut />
+                Sign out
+              </Button>
+            </div>
           </header>
           <main className="flex-1 px-4 py-4">
             <Outlet />

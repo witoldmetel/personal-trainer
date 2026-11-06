@@ -6,9 +6,9 @@ Log date, program day, exercise, sets, reps, and weight. Import history from Exc
 
 ## Status
 
-The UI is a **Vite + React** SPA with an in-memory store and a mock GitHub login. Seed data is the Home routine (Days 1–4).
+The UI is a **Vite + React** SPA. GitHub login goes through **Supabase Auth** (allowlisted to `witoldmetel`). Workout data is still in-memory seed until Postgres is wired.
 
-Still to wire: **Supabase** (Postgres + real GitHub auth) and the live **Cloudflare Worker** URL. Destination app shell is [TanStack Start](https://tanstack.com/start).
+Destination app shell is [TanStack Start](https://tanstack.com/start).
 
 Product and stack decisions: [docs/prd.md](./docs/prd.md), [docs/tech-stack.md](./docs/tech-stack.md).
 
@@ -35,11 +35,12 @@ cp .env.example .env
 pnpm dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173) (or 5174 if 5173 is taken). Continue with GitHub is a local stub until Supabase auth is connected.
+Open [http://localhost:5173](http://localhost:5173) (or 5174 if 5173 is taken). **Continue with GitHub** uses Supabase OAuth. Add `http://localhost:5173/**` and `http://localhost:5174/**` under Supabase → Authentication → URL configuration.
 
 ```env
 VITE_SUPABASE_URL=https://YOUR_PROJECT_ID.supabase.co
 VITE_SUPABASE_ANON_KEY=
+VITE_ALLOWED_GITHUB_USERNAME=witoldmetel
 ```
 
 Never commit `.env`. Use the **anon / publishable** key only — not `service_role`.

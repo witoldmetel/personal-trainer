@@ -17,8 +17,6 @@ import type {
 } from '@/lib/types'
 
 type StoreApi = StoreState & {
-  login: () => void
-  logout: () => void
   todaySession: () => Session | undefined
   sessionDay: (session: Session) => ProgramDay | undefined
   loggerRows: (sessionId: string) => LoggerRow[]
@@ -140,8 +138,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ...state,
       lastTimeFor,
       loggerRows,
-      login: () => setState((s) => ({ ...s, authenticated: true })),
-      logout: () => setState((s) => ({ ...s, authenticated: false })),
       todaySession: () =>
         state.sessions.find((s) => s.performedOn === todayIso()),
       sessionDay: (session) =>

@@ -2,7 +2,8 @@ import type { ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from '@/components/app-shell'
 import { Toaster } from '@/components/ui/sonner'
-import { StoreProvider, useStore } from '@/lib/store'
+import { AuthProvider, useAuth } from '@/lib/auth'
+import { StoreProvider } from '@/lib/store'
 import { ChartsPage } from '@/pages/charts'
 import { DashboardPage } from '@/pages/dashboard'
 import { HistoryPage } from '@/pages/history'
@@ -11,15 +12,25 @@ import { LoginPage } from '@/pages/login'
 import { ProgramsPage } from '@/pages/programs'
 import { TodayPage } from '@/pages/today'
 
+function AuthSplash() {
+  return (
+    <div className="flex min-h-svh items-center justify-center bg-background text-sm text-muted-foreground">
+      Loading
+    </div>
+  )
+}
+
 function Gate({ children }: { children: ReactNode }) {
-  const { authenticated } = useStore()
-  if (!authenticated) return <Navigate to="/login" replace />
+  const { ready, allowed } = useAuth()
+  if (!ready) return <AuthSplash />
+  if (!allowed) return <Navigate to="/login" replace />
   return children
 }
 
 function LoginGate() {
-  const { authenticated } = useStore()
-  if (authenticated) return <Navigate to="/dashboard" replace />
+  const { ready, allowed } = useAuth()
+  if (!ready) return <AuthSplash />
+  if (allowed) return <Navigate to="/dashboard" replace />
   return <LoginPage />
 }
 
@@ -50,11 +61,13 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <StoreProvider>
-      <BrowserRouter>
-        <AppRoutes />
-        <Toaster />
-      </BrowserRouter>
-    </StoreProvider>
+    <AuthProvider>
+      <StoreProvider>
+        <BrowserRouter>
+          <AppRoutes />
+          <Toaster />
+        </BrowserRouter>
+      </StoreProvider>
+    </AuthProvider>
   )
 }
