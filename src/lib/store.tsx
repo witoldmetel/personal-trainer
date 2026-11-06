@@ -429,9 +429,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
         const groups = new Map<string, typeof rows>()
         for (const row of rows) {
+          const exerciseName = row.exerciseName.trim()
+          if (!exerciseName) continue
+          const setNumber = Math.round(row.setNumber)
+          const reps = Math.round(row.reps)
+          if (!Number.isInteger(setNumber) || setNumber < 1) continue
+          if (!Number.isInteger(reps) || reps < 1) continue
           const key = `${row.date}|${row.dayName.toLowerCase()}`
           const list = groups.get(key) ?? []
-          list.push(row)
+          list.push({
+            ...row,
+            exerciseName,
+            setNumber,
+            reps,
+            weightKg: row.weightKg,
+          })
           groups.set(key, list)
         }
 

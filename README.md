@@ -45,7 +45,7 @@ VITE_ALLOWED_GITHUB_USERNAME=witoldmetel
 
 Never commit `.env`. Use the **anon / publishable** key only — not `service_role`.
 
-Apply [`supabase/migrations/20261106_init.sql`](supabase/migrations/20261106_init.sql) once in the Supabase SQL editor (tables, RLS, allowlist). Without it, the app cannot load gym data.
+Apply [`supabase/migrations/20261106_init.sql`](supabase/migrations/20261106_init.sql) in the Supabase **SQL Editor** (Table Editor is not enough). Run the whole file, confirm it succeeds, then sign in again. If login says `public.profiles` is missing from the schema cache, the API has not seen the tables yet — re-run the file (it is safe to repeat; it reloads the cache).
 
 | Script | What |
 |---|---|

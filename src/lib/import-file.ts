@@ -48,6 +48,23 @@ export function parseNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+export function usableExerciseName(value: unknown): string | null {
+  const name = cellText(value)
+    .replace(/\s*\(\d+\)\s*$/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!name) return null
+  if (/^[-–—._/\\]+$/.test(name)) return null
+  if (/^(n\/a|na|none|null|undefined|-)$/i.test(name)) return null
+  return name
+}
+
+function parseWhole(value: unknown, min: number, max: number): number | null {
+  const n = parseNumber(value)
+  if (n == null || !Number.isInteger(n) || n < min || n > max) return null
+  return n
+}
+
 function parseDate(value: unknown): string | null {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     const y = value.getFullYear()
@@ -91,8 +108,7 @@ function isAtjGrid(rows: unknown[][]): boolean {
 function parseSetLabel(text: string): number | null {
   const match = text.match(/^(\d+)(st|nd|rd|th)?\s*set/i)
   if (match) return Number(match[1])
-  const n = parseNumber(text)
-  return n != null && n >= 1 && n <= 20 ? n : null
+  return parseWhole(text, 1, 30)
 }
 
 function columnWeight(headerRow: unknown[], col: number): number | null {
@@ -114,8 +130,13 @@ function parseAtjSheet(rows: unknown[][], dayName: string): MappedSet[] {
   for (const row of rows) {
     const a = cellText(row[0])
     const b = cellText(row[1])
-    if (b.toLowerCase() === 'workout goal' && a && !/^warm up/i.test(a)) {
-      exercise = a.replace(/\s*\(\d+\)\s*$/, '').trim()
+    if (b.toLowerCase() === 'workout goal') {
+      const next = usableExerciseName(a)
+      if (!next || /^warm up/i.test(next)) {
+        exercise = ''
+        continue
+      }
+      exercise = next
       headerRow = row
       const lastCol = Math.max(row.length - 1, 2)
       sessionDates = Array.from({ length: lastCol + 1 }, (_, col) => {
@@ -134,8 +155,8 @@ function parseAtjSheet(rows: unknown[][], dayName: string): MappedSet[] {
     const setNumber = parseSetLabel(a)
     if (!exercise || setNumber == null) continue
     for (let col = 2; col < row.length; col++) {
-      const reps = parseNumber(row[col])
-      if (reps == null || reps <= 0) continue
+      const reps = parseWhole(row[col], 1, 100)
+      if (reps == null) continue
       const weightKg =
         col === 2
           ? columnWeight(headerRow, headerRow.length - 1) ?? 0
@@ -174,10 +195,13 @@ function mapTallRows(
   const out: MappedSet[] = []
 
   body.forEach((row, rowIndex) => {
-    const exerciseName = iEx >= 0 ? cellText(row[iEx]) : ''
-    const reps = iReps >= 0 ? parseNumber(row[iReps]) : null
-    const setNumber = iSet >= 0 ? parseSetLabel(cellText(row[iSet])) ?? parseNumber(row[iSet]) : 1
-    if (!exerciseName || reps == null || reps <= 0 || setNumber == null) return
+    const exerciseName = iEx >= 0 ? usableExerciseName(row[iEx]) : null
+    const reps = iReps >= 0 ? parseWhole(row[iReps], 1, 100) : null
+    const setNumber =
+      iSet >= 0
+        ? parseSetLabel(cellText(row[iSet])) ?? parseWhole(row[iSet], 1, 30)
+        : 1
+    if (!exerciseName || reps == null || setNumber == null) return
     const date = iDate >= 0 ? parseDate(row[iDate]) : null
     const dayName = iDay >= 0 && cellText(row[iDay]) ? cellText(row[iDay]) : defaultDay
     const weightKg = iWt >= 0 ? parseNumber(row[iWt]) ?? 0 : 0

@@ -1,22 +1,24 @@
-create table public.allowed_users (
+create table if not exists public.allowed_users (
   github_username text primary key
 );
 
-insert into public.allowed_users (github_username) values ('witoldmetel');
+insert into public.allowed_users (github_username)
+values ('witoldmetel')
+on conflict (github_username) do nothing;
 
-create table public.profiles (
+create table if not exists public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   github_username text not null,
   created_at timestamptz not null default now()
 );
 
-create table public.programs (
+create table if not exists public.programs (
   id text primary key,
   user_id uuid not null references public.profiles (id) on delete cascade,
   name text not null
 );
 
-create table public.program_days (
+create table if not exists public.program_days (
   id text primary key,
   user_id uuid not null references public.profiles (id) on delete cascade,
   program_id text not null references public.programs (id) on delete cascade,
@@ -24,14 +26,14 @@ create table public.program_days (
   sort_order integer not null default 0
 );
 
-create table public.exercises (
+create table if not exists public.exercises (
   id text primary key,
   user_id uuid not null references public.profiles (id) on delete cascade,
   name text not null,
   muscle_group text
 );
 
-create table public.program_exercises (
+create table if not exists public.program_exercises (
   id text primary key,
   user_id uuid not null references public.profiles (id) on delete cascade,
   program_day_id text not null references public.program_days (id) on delete cascade,
@@ -41,7 +43,7 @@ create table public.program_exercises (
   target_reps integer not null
 );
 
-create table public.sessions (
+create table if not exists public.sessions (
   id text primary key,
   user_id uuid not null references public.profiles (id) on delete cascade,
   program_day_id text references public.program_days (id) on delete set null,
@@ -49,7 +51,7 @@ create table public.sessions (
   status text not null check (status in ('in_progress', 'done'))
 );
 
-create table public.session_sets (
+create table if not exists public.session_sets (
   id text primary key,
   user_id uuid not null references public.profiles (id) on delete cascade,
   session_id text not null references public.sessions (id) on delete cascade,
@@ -60,13 +62,13 @@ create table public.session_sets (
   note text
 );
 
-create index programs_user_id_idx on public.programs (user_id);
-create index program_days_user_id_idx on public.program_days (user_id);
-create index exercises_user_id_idx on public.exercises (user_id);
-create index program_exercises_user_id_idx on public.program_exercises (user_id);
-create index sessions_user_id_idx on public.sessions (user_id);
-create index session_sets_user_id_idx on public.session_sets (user_id);
-create index session_sets_session_id_idx on public.session_sets (session_id);
+create index if not exists programs_user_id_idx on public.programs (user_id);
+create index if not exists program_days_user_id_idx on public.program_days (user_id);
+create index if not exists exercises_user_id_idx on public.exercises (user_id);
+create index if not exists program_exercises_user_id_idx on public.program_exercises (user_id);
+create index if not exists sessions_user_id_idx on public.sessions (user_id);
+create index if not exists session_sets_user_id_idx on public.session_sets (user_id);
+create index if not exists session_sets_session_id_idx on public.session_sets (session_id);
 
 create or replace function public.is_allowlisted(uname text)
 returns boolean
@@ -105,6 +107,7 @@ begin
 end;
 $$;
 
+drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
@@ -119,6 +122,16 @@ alter table public.sessions enable row level security;
 alter table public.session_sets enable row level security;
 
 revoke all on public.allowed_users from anon, authenticated;
+
+drop policy if exists profiles_select on public.profiles;
+drop policy if exists profiles_insert on public.profiles;
+drop policy if exists profiles_update on public.profiles;
+drop policy if exists programs_all on public.programs;
+drop policy if exists program_days_all on public.program_days;
+drop policy if exists exercises_all on public.exercises;
+drop policy if exists program_exercises_all on public.program_exercises;
+drop policy if exists sessions_all on public.sessions;
+drop policy if exists session_sets_all on public.session_sets;
 
 create policy profiles_select on public.profiles
   for select to authenticated
@@ -169,7 +182,7 @@ create policy session_sets_all on public.session_sets
   using (user_id = auth.uid())
   with check (user_id = auth.uid());
 
-grant usage on schema public to authenticated;
+grant usage on schema public to anon, authenticated;
 grant execute on function public.is_allowlisted(text) to authenticated;
 grant select, insert, update, delete on public.profiles to authenticated;
 grant select, insert, update, delete on public.programs to authenticated;
@@ -178,3 +191,5 @@ grant select, insert, update, delete on public.exercises to authenticated;
 grant select, insert, update, delete on public.program_exercises to authenticated;
 grant select, insert, update, delete on public.sessions to authenticated;
 grant select, insert, update, delete on public.session_sets to authenticated;
+
+notify pgrst, 'reload schema';

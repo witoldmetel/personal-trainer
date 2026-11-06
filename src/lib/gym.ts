@@ -234,8 +234,8 @@ export async function persistSets(sets: SessionSet[]) {
       user_id: uid,
       session_id: set.sessionId,
       exercise_id: set.exerciseId,
-      set_number: set.setNumber,
-      reps: set.reps,
+      set_number: Math.round(set.setNumber),
+      reps: set.reps == null ? null : Math.round(set.reps),
       weight_kg: set.weightKg,
     })),
   )
@@ -254,7 +254,9 @@ export async function persistSetPatch(
   patch: { reps?: number | null; weightKg?: number | null },
 ) {
   const row: { reps?: number | null; weight_kg?: number | null } = {}
-  if ('reps' in patch) row.reps = patch.reps
+  if ('reps' in patch) {
+    row.reps = patch.reps == null ? null : Math.round(patch.reps)
+  }
   if ('weightKg' in patch) row.weight_kg = patch.weightKg
   const { error } = await client().from('session_sets').update(row).eq('id', setId)
   await throwIfError(error)
@@ -332,7 +334,7 @@ export async function persistImport(next: StoreState, previous: StoreState) {
   await insertChunked(
     'exercises',
     next.exercises
-      .filter((row) => !prevExerciseIds.has(row.id))
+      .filter((row) => !prevExerciseIds.has(row.id) && row.name.trim() !== '')
       .map((row) => ({
         id: row.id,
         user_id: uid,
@@ -363,8 +365,8 @@ export async function persistImport(next: StoreState, previous: StoreState) {
         user_id: uid,
         session_id: set.sessionId,
         exercise_id: set.exerciseId,
-        set_number: set.setNumber,
-        reps: set.reps,
+        set_number: Math.round(set.setNumber),
+        reps: set.reps == null ? null : Math.round(set.reps),
         weight_kg: set.weightKg,
       })
       continue
@@ -372,7 +374,10 @@ export async function persistImport(next: StoreState, previous: StoreState) {
     if (prev.reps === set.reps && prev.weightKg === set.weightKg) continue
     const { error } = await db
       .from('session_sets')
-      .update({ reps: set.reps, weight_kg: set.weightKg })
+      .update({
+        reps: set.reps == null ? null : Math.round(set.reps),
+        weight_kg: set.weightKg,
+      })
       .eq('id', set.id)
     await throwIfError(error)
   }
