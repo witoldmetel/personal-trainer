@@ -69,7 +69,10 @@ export function exerciseSessionPoints(input: {
       if (session.performedOn < filters.from || session.performedOn > filters.to) {
         return false
       }
-      if (filters.dayIds.length > 0 && !filters.dayIds.includes(session.programDayId)) {
+      if (
+        filters.dayIds.length > 0 &&
+        (session.programDayId == null || !filters.dayIds.includes(session.programDayId))
+      ) {
         return false
       }
       return true
@@ -115,8 +118,10 @@ export function exerciseSessionPoints(input: {
         date: parseIsoDate(session.performedOn),
         dateIso: session.performedOn,
         dateLabel: formatChartDate(session.performedOn),
-        programDayId: session.programDayId,
-        programDayName: dayName.get(session.programDayId) ?? 'Day',
+        programDayId: session.programDayId ?? '',
+        programDayName: session.programDayId
+          ? (dayName.get(session.programDayId) ?? 'Day')
+          : 'Day',
         exerciseId,
         exerciseName: exerciseName.get(exerciseId) ?? 'Unknown',
         bestWeightKg,

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from '@/components/app-shell'
 import { Toaster } from '@/components/ui/sonner'
@@ -20,11 +21,17 @@ function AuthSplash() {
   )
 }
 
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { staleTime: 15_000, retry: 1 },
+  },
+})
+
 function Gate({ children }: { children: ReactNode }) {
   const { ready, allowed } = useAuth()
   if (!ready) return <AuthSplash />
   if (!allowed) return <Navigate to="/login" replace />
-  return children
+  return <StoreProvider>{children}</StoreProvider>
 }
 
 function LoginGate() {
@@ -61,13 +68,13 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <StoreProvider>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
         <BrowserRouter>
           <AppRoutes />
           <Toaster />
         </BrowserRouter>
-      </StoreProvider>
-    </AuthProvider>
+      </AuthProvider>
+    </QueryClientProvider>
   )
 }

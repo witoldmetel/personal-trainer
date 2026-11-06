@@ -29,7 +29,7 @@ export type SessionStatus = 'in_progress' | 'done'
 
 export type Session = {
   id: string
-  programDayId: string
+  programDayId: string | null
   performedOn: string
   status: SessionStatus
 }

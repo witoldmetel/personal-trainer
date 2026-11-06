@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react'
 import type { Session } from '@supabase/supabase-js'
+import { ensureProfile } from '@/lib/gym'
 import { supabase } from '@/lib/supabase'
 
 const ALLOWED = (
@@ -77,6 +78,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             name
               ? `GitHub account @${name} is not allowed.`
               : 'This GitHub account is not allowed.',
+          )
+        }
+        return
+      }
+      try {
+        await ensureProfile(name ?? ALLOWED)
+      } catch (profileError) {
+        if (!cancelled) {
+          setAllowed(false)
+          setUsername(null)
+          setError(
+            profileError instanceof Error
+              ? profileError.message
+              : 'Could not create profile.',
           )
         }
         return

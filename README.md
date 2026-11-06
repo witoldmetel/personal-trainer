@@ -6,7 +6,7 @@ Log date, program day, exercise, sets, reps, and weight. Import history from Exc
 
 ## Status
 
-The UI is a **Vite + React** SPA. GitHub login goes through **Supabase Auth** (allowlisted to `witoldmetel`). Workout data is still in-memory seed until Postgres is wired.
+The UI is a **Vite + React** SPA. GitHub login goes through **Supabase Auth** (allowlisted to `witoldmetel`). Programs, sessions, and sets live in **Supabase Postgres**.
 
 Destination app shell is [TanStack Start](https://tanstack.com/start).
 
@@ -22,7 +22,7 @@ Product and stack decisions: [docs/prd.md](./docs/prd.md), [docs/tech-stack.md](
 | Tables / forms / charts | TanStack Table, Form, Charts |
 | Lint | Biome |
 | Excel | SheetJS (`xlsx`) |
-| Data (next) | Supabase |
+| Data | Supabase Postgres + Auth + RLS |
 | Host | Cloudflare Workers (`wrangler.jsonc`) |
 
 ## Local
@@ -44,6 +44,8 @@ VITE_ALLOWED_GITHUB_USERNAME=witoldmetel
 ```
 
 Never commit `.env`. Use the **anon / publishable** key only — not `service_role`.
+
+Apply [`supabase/migrations/20261106_init.sql`](supabase/migrations/20261106_init.sql) once in the Supabase SQL editor (tables, RLS, allowlist). Without it, the app cannot load gym data.
 
 | Script | What |
 |---|---|
