@@ -1,8 +1,0 @@
-import type { ChartMark, ChartValue, InitializedMark, MarkScene } from './types.js';
-interface DecorativeMarkLifecycleOptions {
-    conditional: 'remove' | 'reject' | 'preserve-states';
-    layoutLabels: 'preserve' | 'remove';
-}
-/** Reuses one post-domain lifecycle for always-decorative and filtered marks. */
-export declare function createDecorativeMark<TDatum, TXPointValue extends ChartValue, TYPointValue extends ChartValue, TXScaleValue extends ChartValue, TYScaleValue extends ChartValue, TXScaleId extends string, TYScaleId extends string>(mark: ChartMark<TDatum, TXPointValue, TYPointValue, TXScaleValue, TYScaleValue, TXScaleId, TYScaleId>, transform: (scene: MarkScene<TDatum, TXPointValue, TYPointValue>, metadata: Pick<InitializedMark, 'id' | 'states'>) => MarkScene<TDatum, TXPointValue, TYPointValue>, options: DecorativeMarkLifecycleOptions): ChartMark<TDatum, never, never, TXScaleValue, TYScaleValue, TXScaleId, TYScaleId>;
-export {};

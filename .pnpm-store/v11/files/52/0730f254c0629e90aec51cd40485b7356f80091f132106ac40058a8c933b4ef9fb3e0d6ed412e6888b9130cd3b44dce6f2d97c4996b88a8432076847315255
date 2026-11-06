@@ -1,4 +1,0 @@
-export { Chart } from './Chart.js';
-export type { ChartCommonProps, ChartProps } from './Chart.js';
-export type { ChartTooltipBodyRenderContext } from './tooltip.js';
-export type { DomChartDefinition as ChartDefinition, ChartPoint, } from '@tanstack/charts';

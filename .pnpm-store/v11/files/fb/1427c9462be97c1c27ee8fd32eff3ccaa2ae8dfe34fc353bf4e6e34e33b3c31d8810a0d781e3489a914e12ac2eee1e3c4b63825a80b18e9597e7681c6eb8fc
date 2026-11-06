@@ -1,7 +1,0 @@
-import { type TooltipBounds } from './tooltip-placement.js';
-import type { ChartTooltipPlacement, ChartTooltipPosition } from './types.js';
-export { resolveChartTooltipPlacement, type TooltipBounds, type TooltipSize, } from './tooltip-placement.js';
-export declare function placeTooltip(tooltip: HTMLElement, anchorX: number, anchorY: number, boundary: TooltipBounds, placement: 'auto' | ChartTooltipPlacement | readonly ChartTooltipPlacement[] | undefined, offset: number | undefined): void;
-export declare function sceneToClient(element: Element, width: number, height: number, position: ChartTooltipPosition): ChartTooltipPosition | null;
-export declare function viewportBounds(document: Document): TooltipBounds;
-export declare function pointInBounds(point: ChartTooltipPosition, bounds: TooltipBounds): boolean;
