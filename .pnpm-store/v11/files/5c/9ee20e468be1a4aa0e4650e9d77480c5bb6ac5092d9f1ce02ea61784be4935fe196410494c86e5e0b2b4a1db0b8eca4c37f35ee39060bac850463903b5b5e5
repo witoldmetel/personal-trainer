@@ -1,0 +1,228 @@
+---
+title: Responsive Charts
+description: Size charts from their containers while preserving readable guides, deterministic SSR, and application-controlled height.
+---
+
+TanStack Charts treats width and height differently:
+
+- width is normally measured from the chart container's content box;
+- height is a product decision supplied as pixels, an aspect ratio, or the
+  container's CSS content height;
+- scale factories infer domains while configured instances retain fixed domains;
+- TanStack Charts copies those scales and assigns responsive pixel ranges.
+
+This keeps a definition stable while the same chart moves between a dashboard
+card, a split pane, and a full-width report.
+
+## Container-responsive width
+
+Omit `width` from `mountChart` or framework adapter options to follow the
+container. The shared DOM host observes every container-owned content-box
+dimension and updates when its measured width or height changes. Padding and
+borders stay outside the chart scene.
+
+```ts
+const host = mountChart(element, {
+  definition,
+  height: 320,
+  ariaLabel: 'Weekly downloads',
+})
+```
+
+The container must have a resolvable content width. In grid and flex layouts,
+the common requirement is `min-width: 0` on the grid or flex child:
+
+```css
+.chart-card {
+  min-width: 0;
+}
+```
+
+Supply `width` only when an application deliberately owns fixed geometry, such
+as an export frame or a benchmark.
+
+## Height and aspect ratio
+
+Use one of these policies:
+
+- `height`: fixed product height in CSS pixels;
+- a positive, finite `aspectRatio`: derive height from the measured content
+  width;
+- neither: follow a positive, finite CSS container content height, falling back
+  to the host default of `320` until one is available.
+
+Do not supply both as competing policies. A fixed height is usually more stable
+for dashboards and scrolling pages. An aspect ratio is useful for editorial
+layouts where the chart should scale as one visual block. Invalid ratios fall
+back to container height. A fixed `width` does not disable height observation
+when CSS owns height.
+
+Container-owned height must resolve independently of the chart surface, such
+as a fixed-height card, grid row, flex item, or remaining track. If the chart
+would size a `height: auto` container itself, supply `height` or `aspectRatio`
+instead so the surface is not also its own resize input.
+
+## Automatic guide space
+
+Omit `margin` for normal charts. The scene solver reserves the minimum space
+required by:
+
+- formatted tick labels;
+- rotated tick bounds;
+- first and last tick overhang;
+- axis titles;
+- legends;
+- inherited font metrics in a DOM host.
+
+```ts group=responsive-long-labels env=charts file=/src/chart.ts entry
+import { barX, defineChart } from '@tanstack/charts'
+import { scaleBand } from '@tanstack/charts/scales/band'
+import { scaleLinear } from '@tanstack/charts/scales/linear'
+import { rows } from './data'
+
+export default defineChart({
+  marks: [
+    barX(rows, {
+      x: 'weeklyRequests',
+      y: 'feature',
+      fill: '#7c3aed',
+      inset: 1,
+    }),
+  ],
+  scales: {
+    x: {
+      scale: scaleLinear,
+      nice: true,
+      grid: true,
+      axis: { ticks: { count: 5 }, label: 'Weekly requests' },
+    },
+    y: {
+      scale: () => scaleBand<string>().padding(0.1),
+    },
+  },
+})
+```
+
+```ts group=responsive-long-labels file=/src/data.ts collapsed
+export const rows = [
+  { feature: 'Self-service account recovery', weeklyRequests: 128 },
+  { feature: 'Saved searches and alerting', weeklyRequests: 95 },
+  { feature: 'Audit log export', weeklyRequests: 72 },
+  { feature: 'Custom retention policies', weeklyRequests: 44 },
+  { feature: 'Role-based access controls', weeklyRequests: 31 },
+]
+```
+
+An explicit side locks only that side:
+
+```ts
+margin: {
+  left: 96
+}
+```
+
+`margin: 0` locks every side and is appropriate for guide-free sparklines.
+Axis labels thin automatically after candidate generation and optional
+rotation. Use `axis.ticks.spacing`, `axis.tickLabels.rotate`, hard-kept labels,
+or a different representation when labels compete for the same axis space.
+
+[Open the full horizontal-ranking catalog case](https://tanstack.com/charts/catalog/bar-horizontal-ranking/).
+
+## Text measurement
+
+Static scenes use deterministic text estimates. DOM and framework SVG hosts
+measure painted text with the inherited container font and relayout after web
+fonts finish loading.
+
+Use `measureText` only when another renderer or layout system owns text
+measurement. It runs synchronously during scene compilation and receives the
+text plus the resolved font family, style, stretch, size, weight, letter
+spacing, direction, locale, font scale, anchor, and baseline. It returns the
+painted box relative to the requested origin. A host that loads fonts or
+measures them asynchronously owns that readiness lifecycle and renders the
+scene again when its synchronous metrics change.
+
+The resolved geometry is available after every render:
+
+```ts
+const scene = host.getScene()
+
+scene.margin
+scene.chart
+scene.scales
+```
+
+Use `scene.chart` to align application-owned overlays. Do not calculate a
+parallel plot rectangle from guessed margins.
+
+## Deterministic server output
+
+A server cannot measure a future browser container. Supply `initialWidth` when
+the initial SVG must have deterministic geometry:
+
+```tsx
+<Chart
+  definition={definition}
+  initialWidth={640}
+  height={320}
+  ariaLabel="Weekly downloads"
+/>
+```
+
+The client adopts the real container width after hydration. Use the same
+`initialWidth` for all requests that render the same layout; do not derive it
+from browser-only APIs on the server.
+
+See [SSR and Hydration](./ssr-and-hydration.md) for the complete lifecycle.
+
+## Responsive construction
+
+Most data transforms should depend only on application data. The responsive
+builder receives the full scene width and height, so it can choose breakpoints,
+tick counts, or a surface-relative representation.
+
+Those values are not the final inner plot bounds. Automatic guides and legends
+resolve `scene.chart` after the builder returns. Exact plot-space collision,
+binning, or label placement belongs in a custom mark's render phase, which
+receives the final chart bounds and resolved scales, or in an application
+overlay driven by `onRender`.
+
+```ts
+function summarizeRows(rows: Input['rows']) {
+  return summarize(rows)
+}
+
+function createDefinition(rows: Input['rows']) {
+  const summary = summarizeRows(rows)
+
+  return defineChart(({ width }) =>
+    buildResponsiveSpec(summary, {
+      compact: width < 480,
+    }),
+  )
+}
+```
+
+For a deliberately guide-free `margin: 0` scene, the full surface and inner
+plot can coincide. Do not assume that equivalence for ordinary automatic
+layout.
+
+Responsive relayout commits immediately even when animation is enabled for
+data updates. Set `svgAnimation: { resize: true }` only when size interpolation is
+intentional.
+
+The [Dynamic Data and Animation](./dynamic-data-and-animation.md) guide explains
+the two phases. The [D3 integration contract](../concepts/scales-and-d3.md)
+explains why application code should not set positional pixel ranges.
+
+## Responsive checklist
+
+- The container can shrink because its grid or flex child uses `min-width: 0`.
+- Width is omitted unless fixed geometry is intentional.
+- Height or aspect ratio is an explicit product choice.
+- Scale domains remain semantic and independent from pixels.
+- Automatic margins are enabled unless the chart is deliberately guide-free.
+- Long labels are tested at the smallest supported width.
+- Overlays use `scene.chart`, not duplicated margin math.
+- SSR uses a deterministic `initialWidth`.
+- Final plot-space work reads custom-mark render bounds or `scene.chart`.

@@ -1,0 +1,1004 @@
+---
+title: Scales, Guides, and Color
+description: Reference for injected positional scales, automatic axes and margins, color scales, legends, themes, and gradients.
+---
+
+Pass a compatible scale factory when its domain should come from mark channels.
+Pass a scale instance when the domain is fixed application state. TanStack
+Charts copies the resolved scale, assigns its responsive pixel range, and uses
+that copy for marks, ticks, and interaction. A supplied instance is never
+mutated.
+
+Put positional mappings in the chart's `scales` registry. The reserved `x`
+and `y` entries are the default bindings for Cartesian marks:
+
+```ts
+const scales = {
+  x: { scale: scaleBand, axis: { label: 'Product' } },
+  y: { scale: scaleLinear, grid: true, axis: { label: 'Revenue' } },
+}
+```
+
+Start with the exact compact scale entry for numeric linear, band, point, or
+ordinal or UTC time mappings. Upgrade one mapping to D3 only when it needs local-time,
+nonlinear, radial, interpolated, or statistical scale semantics. The
+[Scales](../concepts/scales-and-d3.md) guide owns that decision and direct
+dependency guidance. This page documents the TanStack Charts contract around
+both implementations.
+
+## Default compact scale entries
+
+`@tanstack/charts` supplies five exact, tree-shakeable scale entries:
+
+| Entry                             | Runtime export | Type contract  |
+| --------------------------------- | -------------- | -------------- |
+| `@tanstack/charts/scales/linear`  | `scaleLinear`  | `LinearScale`  |
+| `@tanstack/charts/scales/band`    | `scaleBand`    | `BandScale`    |
+| `@tanstack/charts/scales/point`   | `scalePoint`   | `PointScale`   |
+| `@tanstack/charts/scales/ordinal` | `scaleOrdinal` | `OrdinalScale` |
+| `@tanstack/charts/scales/time`    | `scaleUtc`     | `UtcScale`     |
+
+`LinearScale` supports numeric two-stop domains and ranges, `invert`, `clamp`,
+`ticks`, basic `tickFormat`, `nice`, and `copy`. `BandScale` supports
+`padding`, `paddingInner`, `paddingOuter`, `align`, `round`, `rangeRound`,
+`bandwidth`, `step`, and `copy`. `PointScale` exposes the corresponding point
+operations with zero bandwidth. `OrdinalScale` supports explicit or implicit
+domains, cyclic ranges, `unknown`, and `copy`.
+
+```ts
+import { scaleLinear } from '@tanstack/charts/scales/linear'
+
+const y = {
+  scale: scaleLinear().domain([0, 100]),
+}
+```
+
+The factories and returned instances satisfy `ChartScaleInput` directly. They
+are a documented subset, not a complete `d3-scale` compatibility claim. Use D3
+for local-time or transformed domains, piecewise and nonnumeric interpolation,
+and full D3 formatting semantics.
+
+`UtcScale` supports two-stop Date domains and finite numeric ranges, elapsed-time
+mapping, Date-valued `invert`, `clamp`, calendar-aware `ticks(count)`,
+`tickFormat(count)`, `nice(count)`, and independent `copy`. Domain setters accept
+Dates or millisecond timestamps and getters return new Dates. Invalid domains
+throw without changing the scale. Invalid mapped values return `undefined`.
+
+Ticks use UTC seconds, minutes, hours, epoch-aligned days, Sunday weeks, months,
+quarters, and years. Default labels use English UTC calendar formatting.
+`nice` expands both ascending and descending domains. Counts are hints, not an
+exact number of ticks; nonpositive or nonfinite counts produce no ticks and
+leave `nice` unchanged. Unlike D3, this compact entry does not accept interval
+objects, format specifiers, locale configuration, or piecewise domains. Use a
+guide formatter for application-specific labels or D3 for those scale features.
+
+`ConfiguredScaleLike` may expose `invert(position)`. Charts copies that
+capability onto `ResolvedScale.invert` after assigning the responsive range.
+Final-screen layouts and interactions can then recover semantic values without
+copying the authored scale. Band scales do not expose inversion.
+
+## Positional scale factories
+
+The common path passes a compact factory directly:
+
+```ts
+import { scaleBand } from '@tanstack/charts/scales/band'
+import { scaleLinear } from '@tanstack/charts/scales/linear'
+
+const x = {
+  scale: () => scaleBand<string>().padding(0.16),
+  axis: { label: 'Product' },
+}
+
+const y = {
+  scale: scaleLinear,
+  nice: true,
+  grid: true,
+  axis: { label: 'Revenue' },
+}
+```
+
+The chart creates a fresh scale for each layout, derives its domain from every
+materialized channel bound to that axis, applies `nice`, and assigns the
+responsive range. Bar and area baselines contribute zero when their baseline
+is implicit. Empty channels retain the factory's native domain.
+
+Return a configured scale from a zero-argument factory for options that should
+be applied before domain inference:
+
+```ts
+import { scaleBand } from '@tanstack/charts/scales/band'
+
+const x = {
+  scale: () => scaleBand<string>().padding(0.2),
+}
+```
+
+`nice` is an axis option because it must run after the inferred domain exists.
+
+## D3 scale upgrades
+
+Compact and D3 scales can coexist in one chart. This definition upgrades only
+its temporal x mapping:
+
+```ts
+import { scaleLinear } from '@tanstack/charts/scales/linear'
+import { scaleUtc } from 'd3-scale'
+
+const x = { scale: scaleUtc, nice: true }
+const y = { scale: scaleLinear, nice: true }
+```
+
+Use `scaleTime` or `scaleUtc` when dates need elapsed-time spacing or
+calendar-aware ticks. Compact band and point scales accept `Date` categories,
+but adjacent categories remain equally spaced regardless of the time between
+them.
+
+Other D3-only scale families cover logarithmic, power, symlog, square-root,
+radial, sequential, diverging, quantile, quantize, and threshold mappings. D3
+linear scales add piecewise domains and ranges, nonnumeric interpolation, and
+custom interpolators. The factory-versus-instance and responsive-range rules
+remain unchanged after an upgrade.
+
+## Fixed domains
+
+Pass a scale instance when the domain is semantic application state:
+
+```ts
+import { scaleLinear } from '@tanstack/charts/scales/linear'
+
+const y = {
+  scale: scaleLinear().domain([0, 100]),
+}
+```
+
+Instances retain:
+
+- their semantic domain
+- continuous, temporal, logarithmic, ordinal, or band mapping behavior
+- tick generation and default tick formatting
+- clamping, unknown values, interpolation, and padding configured by the caller
+
+TanStack Charts owns:
+
+- factory-domain inference
+- the responsive pixel range
+- y-range orientation and optional axis reversal
+- centering values within a band
+- guide placement, label measurement, and margins
+
+Scale copies make one configured scale safe to reuse across responsive scenes.
+
+## Axis options
+
+```ts
+interface ChartPositionScaleOptions<
+  TValue extends ChartValue,
+> extends ChartAxisOptions<TValue> {
+  channel?: 'x' | 'y'
+  side?: 'top' | 'right' | 'bottom' | 'left'
+}
+
+interface ChartGuideLineStyle {
+  stroke?: string
+  strokeOpacity?: number
+  strokeWidth?: number
+  strokeDasharray?: string
+  lineCap?: 'butt' | 'round' | 'square'
+}
+
+interface ChartAxisOptions<TValue extends ChartValue> {
+  scale: ChartScale | ChartScaleInput<TValue>
+  nice?: boolean | number
+  reverse?: boolean
+  viewport?: ChartAxisViewportOptions<Extract<TValue, ChartContinuousValue>>
+  grid?: boolean | ChartGuideLineStyle
+  axis?:
+    | false
+    | {
+        line?: boolean | ChartGuideLineStyle
+        ticks?:
+          | false
+          | {
+              count?: number
+              spacing?: number
+              values?: readonly TValue[]
+              size?: number
+              line?: false | ChartGuideLineStyle
+              padding?: number
+              format?: (value: TValue) => string
+            }
+        tickLabels?:
+          | false
+          | {
+              rotate?: number
+              fontSize?:
+                | number
+                | ((
+                    context: ChartAxisTickLabelContext<TValue>,
+                  ) => number | undefined)
+              fontWeight?:
+                | number
+                | ((
+                    context: ChartAxisTickLabelContext<TValue>,
+                  ) => number | undefined)
+              opacity?:
+                | number
+                | ((
+                    context: ChartAxisTickLabelOpacityContext<TValue>,
+                  ) => number | undefined)
+              anchor?:
+                | 'start'
+                | 'middle'
+                | 'end'
+                | ((
+                    context: ChartAxisTickLabelContext<TValue>,
+                  ) => 'start' | 'middle' | 'end' | undefined)
+              dx?:
+                | number
+                | ((
+                    context: ChartAxisTickLabelContext<TValue>,
+                  ) => number | undefined)
+              dy?:
+                | number
+                | ((
+                    context: ChartAxisTickLabelContext<TValue>,
+                  ) => number | undefined)
+              thin?:
+                | boolean
+                | {
+                    minGap?: number
+                    priority?: 'ends'
+                    keep?: readonly TValue[]
+                  }
+            }
+        label?:
+          | string
+          | {
+              text: string
+              offset?: number | 'auto'
+              fontSize?: number
+              fontWeight?: number
+              fill?: string
+              opacity?: number
+              motion?: ChartMotionDefinition
+            }
+      }
+}
+```
+
+| Option     | Default                      | Meaning                                                                  |
+| ---------- | ---------------------------- | ------------------------------------------------------------------------ |
+| `scale`    | Required                     | Compact or D3 factory, configured instance, or custom `ChartScale`.      |
+| `nice`     | `false`                      | Nice the resolved domain using the responsive or supplied tick count.    |
+| `reverse`  | `false`                      | Reverses the responsive pixel range without changing the caller's scale. |
+| `viewport` | None                         | Commits a continuous semantic window and optional transient translation. |
+| `grid`     | `false`                      | Draws grid rules from semantic tick candidates.                          |
+| `axis`     | Inferred axis                | Axis line, tick candidates, labels, and title; `false` hides the axis.   |
+| `channel`  | Inferred for `x` and `y`     | Required on named scales; selects the Cartesian channel and range.       |
+| `side`     | `bottom` for x; `left` for y | Places an x axis on top/bottom or a y axis on left/right.                |
+
+Set `grid` or `axis.line` to a `ChartGuideLineStyle` object to enable the
+guide and override its stroke, opacity, width, dash pattern, or line cap.
+Omitted style fields keep the normal theme defaults. An empty object is
+equivalent to `true`, and `axis.line` styles only the axis baseline, not its
+tick stubs. Use finite non-negative widths and opacity values from zero to one.
+
+```ts
+type ChartContinuousValue = number | Date
+
+type ChartContinuousDomain<
+  TValue extends ChartContinuousValue = ChartContinuousValue,
+> =
+  | (Extract<TValue, number> extends never ? never : readonly [number, number])
+  | (Extract<TValue, Date> extends never ? never : readonly [Date, Date])
+
+interface ChartAxisViewportOptions<
+  TValue extends ChartContinuousValue = ChartContinuousValue,
+> {
+  domain: ChartContinuousDomain<TValue>
+  translate?: number
+}
+```
+
+`ChartContinuousDomain` keeps numeric and temporal endpoints homogeneous at
+the type boundary. At runtime, a viewport requires two distinct finite values
+and a configured or inferable continuous scale with `invert`, ticks, clamping
+disabled, and independently configurable domain and range behavior. Band,
+ordinal, quantize, clamped, and getter-only scale inputs are rejected. An
+authored `axis.viewport` is also rejected for a custom `ChartScale`.
+Logarithmic content and viewport domains must be finite, nonzero, and stay on
+the same side of zero.
+
+`translate` is applied in screen-direction scene pixels after semantic
+mapping: positive x moves right and positive y moves down, regardless of
+domain order or `reverse`. Guides remain fixed. Viewport-dependent marks are
+clipped and translated per mark and per owned axis; see
+[Continuous viewports](../concepts/layout-axes-and-coordinates.md#continuous-viewports).
+
+Set `scales.x` or `scales.y` to `null` only when no mark uses that positional
+scale. To keep the scale while hiding its axis, use `axis: false`. Grid
+visibility remains independent.
+
+Without an explicit `axis.ticks` policy, the responsive target is
+`clamp(2, floor(chart.width / 92), 8)` for x and
+`clamp(2, floor(chart.height / 48), 7)` for y. The configured scale may return
+a different number of ticks.
+
+`nice: true` uses that responsive or authored tick count when rounding a scale
+domain, even if the axis is hidden. Use a number such as `nice: 5` when a small
+sparkline needs domain rounding independent of its size.
+
+`axis.ticks: false` removes both tick stubs and their candidate labels. To keep
+labels while hiding only the stubs, use `axis: { ticks: { size: 0 } }`. The
+baseline is separate, hide it with `axis.line: false`.
+
+Use `axis.ticks.line` to style the stubs with `ChartGuideLineStyle`, or set
+it to `false` to hide just the stubs. This option does not change the
+baseline, grid, tick values, or label formatting.
+
+```ts
+const axis = {
+  line: { stroke: 'navy' },
+  ticks: { line: { stroke: 'navy', strokeWidth: 2 } },
+}
+```
+
+`count`, `spacing`, and `values` are mutually exclusive candidate policies.
+`count` is a scale hint, `spacing` derives that hint from the final axis length,
+and `values` supplies exact semantic candidates. Grid lines and tick stubs use
+these candidates before label thinning.
+
+Tick labels are horizontal and collision-thinned by default. Rotation is
+explicit and independent:
+
+```ts
+import { scaleUtc } from 'd3-scale'
+
+const x = {
+  scale: scaleUtc,
+  axis: {
+    ticks: { spacing: 80, size: 0 },
+    tickLabels: {
+      rotate: -35,
+      thin: {
+        minGap: 8,
+        priority: 'ends',
+        keep: [launchDate],
+      },
+    },
+  },
+}
+```
+
+`thin: false` renders every candidate label. `keep` is a hard guarantee:
+kept values render even if they collide with one another. A kept value outside
+the candidate set adds only a label, not a tick stub or grid line.
+
+Tick-label presentation accepts constants or accessors. Accessors run on every
+candidate before thinning and receive the semantic value, stable candidate
+index, resolved center position, and resolved band width. Continuous scales
+report a bandwidth of zero. Returning `undefined` preserves the normal value
+for that candidate.
+
+```ts
+interface ChartAxisTickLabelContext<TValue extends ChartValue> {
+  value: TValue
+  index: number
+  position: number
+  bandwidth: number
+}
+
+const x = {
+  scale: scaleBand<number>().domain(weeks),
+  axis: {
+    tickLabels: {
+      fontSize: 13,
+      opacity: 0.62,
+      anchor: ({ index }) => (index === 0 ? 'start' : undefined),
+      dx: ({ index, bandwidth }) => (index === 0 ? -bandwidth / 2 : undefined),
+    },
+  },
+}
+```
+
+`anchor` defaults to an outward anchor derived from x rotation or the y-axis
+side. The automatic value accounts for the host's inline direction. `dx` and
+`dy` apply after the normal tick position and padding. Resolved font size,
+weight, anchor, offset, opacity, and rotation all participate in collision
+thinning and automatic margins. Numeric typography follows tick-label motion;
+anchor changes snap.
+
+An opacity callback also receives `focus` and `pointer`, both `null` during
+initial layout. It runs again when focus changes, updating paint without
+rebuilding marks, measuring text, or changing tick placement and thinning.
+Clearing focus restores the initial opacity. Other tick-label callbacks remain
+layout-only. For example, hide the tick that matches the focused x value:
+
+```ts
+const tickLabels = {
+  opacity: ({ value, focus }) =>
+    focus && Object.is(value, focus.primary.xValue) ? 0 : 1,
+}
+```
+
+Axis titles keep the compact string form when only text is needed. Use the
+object form for title typography, paint, offset, or motion:
+
+```ts
+const y = {
+  scale: scaleLinear,
+  axis: {
+    label: {
+      text: 'Average order value (PLN)',
+      fontSize: 14,
+      fontWeight: 500,
+      fill: '#363636',
+      opacity: 0.9,
+    },
+  },
+}
+```
+
+`fill` sets the text color. Omitted presentation fields retain the existing
+title defaults: responsive 10 or 11 pixel sizing on x, 11 pixels on y, weight
+600, theme foreground fill, and 0.76 fill opacity. Configured font size and
+weight participate in text measurement, automatic offsets, and automatic
+margins for SVG, Canvas, and native rendering.
+
+## Named scales and multiple axes
+
+The reserved `x` and `y` entries are the default bindings for Cartesian marks.
+Add another entry when a mark needs an independent mapping, then bind that mark
+with `xScale` or `yScale`:
+
+```ts
+const chart = defineChart({
+  marks: [
+    lineY(revenue, { x: 'date', y: 'value' }),
+    lineY(conversion, {
+      x: 'date',
+      y: 'rate',
+      yScale: 'conversion',
+    }),
+  ],
+  scales: {
+    x: { scale: scaleUtc },
+    y: {
+      scale: scaleLinear,
+      grid: true,
+      axis: { label: 'Revenue' },
+    },
+    conversion: {
+      channel: 'y',
+      scale: scaleLinear,
+      side: 'right',
+      axis: {
+        label: 'Conversion',
+        ticks: { format: (value: number) => `${Math.round(value * 100)}%` },
+      },
+    },
+  },
+})
+```
+
+<!-- ::chart-example id=70-composed-chart height=480 -->
+
+A named scale must declare `channel: 'x'` or `channel: 'y'`. Its mark binding
+must use the same channel. The ID `color` is reserved for the shared visual
+color scale and cannot name a Cartesian position scale.
+
+Every non-null scale renders an axis by default. Set `axis: false` when a
+mapping should not draw another axis. X scales can use the top or bottom side,
+and y scales can use the left or right side. Axes on the same side stack
+outward and contribute their measured size to the automatic margin.
+
+Axis sides stay physical in a right-to-left container, so `side: 'right'`
+still puts the axis on the right. Automatic tick anchors account for the
+container's inline direction and keep labels outside the plot. An explicitly
+authored `start` or `end` anchor remains logical. Text measurement, SVG,
+Canvas, native rendering, and standalone SVG export preserve that direction.
+
+## Automatic guide layout
+
+When a margin side is omitted, the scene compiler measures:
+
+- formatted tick glyph bounds
+- tick rotation
+- first and last label overhang
+- axis title bounds and offset
+- Cartesian `text`-mark anchors, pixel offsets, and rotation
+- color legend height
+
+The DOM host measures the inherited container font and relayouts after web
+fonts load. Static compilation uses deterministic estimates unless
+`measureText` is supplied. Explicit margin sides remain locked, and
+`clip: true` prevents clipped mark labels from expanding the plot.
+
+```ts
+interface ChartTextMeasurer {
+  (
+    text: string,
+    options: {
+      fontSize: number
+      fontWeight?: number
+      fontFamily: string
+      fontStyle: string
+      fontStretch: string
+      letterSpacing: number
+      direction: 'ltr' | 'rtl' | 'inherit'
+      locale?: string
+      fontScale: number
+      anchor: 'start' | 'middle' | 'end'
+      baseline: 'auto' | 'middle' | 'hanging'
+    },
+  ): {
+    x: number
+    y: number
+    width: number
+    height: number
+  }
+}
+```
+
+The returned `x` and `y` locate the painted glyph box relative to the requested
+anchor and baseline. Pass the measurer through a host, adapter, runtime render,
+or `createChartScene` layout options. The callback is synchronous; a host owns
+font loading or asynchronous native measurement and recompiles the scene when
+those metrics become ready. `fontScale` applies to the painted font size and
+letter spacing, so custom measurers must include it in their result.
+
+## Custom scales
+
+`ChartScale` is the final extension boundary for a nonstandard positional
+mapping. Prefer a compact scale, then a D3 scale with the required semantics,
+before implementing this contract:
+
+```ts
+interface ChartScale {
+  id: string
+  resolve(context: ChartScaleResolveContext): ResolvedScale
+}
+
+type ChartScaleResolver = (context: ChartScaleResolveContext) => ResolvedScale
+```
+
+The resolver context contains `id`, all materialized `values`, the responsive
+`range`, the axis `options`, a target `tickCount`, and `includeZero`. It must
+return a complete `ResolvedScale`:
+
+```ts
+interface ResolvedScale {
+  id: string
+  type: string
+  domain: readonly ChartValue[]
+  map(value: unknown): number
+  invert?(position: number): ChartValue
+  ticks: readonly { value: ChartValue; label: string; position: number }[]
+  bandwidth: number
+  viewport?: {
+    contentDomain: readonly ChartValue[]
+    domain: ChartContinuousDomain
+    translate: number
+    map(value: unknown): number
+  }
+}
+```
+
+Prefer a compact or D3 scale when it can express the mapping. A custom scale
+owns correct domains, finite mapping, ticks, formatting, bandwidth, and
+response to the supplied range. Do not wrap an existing compact or D3 scale in
+`ChartScale`.
+
+The host cannot apply an authored `axis.viewport` to an opaque custom
+`ChartScale`. A custom resolver can return a complete
+`ResolvedScale.viewport` itself, in which case it owns the content domain,
+committed domain, translation, and presented mapper.
+
+## Color
+
+Data-paint marks accept a semantic `color` channel. On marks that also expose
+`z`, grouping remains independent and supplies the color value only when
+`color` is omitted. `fill` and `stroke` are final paint overrides, so they do
+not contribute to the scale or legend.
+
+Omit `color.scale` to use the theme palette. Use the compact ordinal scale when
+categories need a stable application-owned mapping:
+
+```ts
+import { scaleOrdinal } from '@tanstack/charts/scales/ordinal'
+
+const statusColor = scaleOrdinal(
+  ['healthy', 'warning', 'critical'],
+  ['#16a34a', '#f59e0b', '#dc2626'],
+)
+```
+
+Upgrade color to D3 for continuous interpolation or quantile, quantize, and
+threshold policy.
+
+```ts
+interface ConfiguredColorScaleLike<TValue extends ChartKey, TOutput> {
+  (value: TValue): TOutput
+  copy: () => ConfiguredColorScaleLike<TValue, TOutput>
+  domain?: () => readonly TValue[]
+  range?: () => readonly TOutput[]
+}
+
+interface ChartColorOptions {
+  scale?: ConfiguredColorScaleLike<any, any> | ChartColorScaleFactory<any, any>
+  resolver?: ChartColorScale
+  domain?: readonly ChartKey[]
+  range?: readonly string[]
+  nice?: boolean | number
+  legend?: ChartColorLegend
+}
+```
+
+| Option     | Default                 | Meaning                                                           |
+| ---------- | ----------------------- | ----------------------------------------------------------------- |
+| `scale`    | None                    | Compatible factory with inference or instance with a fixed domain |
+| `resolver` | None                    | Custom color-scale resolver                                       |
+| `domain`   | Observed channel values | Domain hint for factory, built-in, or custom resolution           |
+| `range`    | See below               | Range for a factory, the built-in scale, or a custom resolver     |
+| `nice`     | `false`                 | Nice a factory or configured continuous color scale               |
+| `legend`   | None                    | Legend layout and scene renderer shown above the inner chart      |
+
+Resolution order:
+
+1. `color.scale`, created or copied before use
+2. custom `color.resolver`
+3. the built-in ordinal scale using `domain` or observed channel values and
+   `range` or the theme palette
+
+A color-scale factory is classified by its capabilities:
+
+- ordinal factories infer first-seen distinct values;
+- continuous and quantize factories infer the finite extent;
+- quantile factories receive the complete numeric population;
+- threshold factories require an explicit domain of authored cuts.
+
+The theme palette is the range default only for the built-in ordinal scale.
+A D3 factory must receive `color.range` or return a scale already configured
+with a non-empty string range or interpolator; bare D3 factories retain
+numeric or empty defaults that are not valid paint. Multi-stop continuous
+ranges receive evenly spaced domain stops across the extent. A supplied scale
+instance retains its domain and range. Outputs are converted to strings. A
+custom `ChartColorScale` receives observed values, optional domain and range,
+and the resolved theme, then returns:
+
+```ts
+interface ResolvedColorScale {
+  type: string
+  kind?: 'categorical' | 'continuous' | 'quantile' | 'quantize' | 'threshold'
+  domain: readonly ChartKey[]
+  range: readonly string[]
+  thresholds?: readonly number[]
+  map(value: ChartKey | null | undefined): string
+}
+```
+
+`ChartKey` is `string | number`. On the built-in and configured-scale paths, a
+null color value maps to the first range color or `currentColor`. A custom
+`ChartColorScale` owns its null mapping through `ResolvedColorScale.map`. A
+custom stepped scale supplies exact interior legend boundaries with
+`thresholds`; D3 quantile, quantize, and threshold scales derive them
+automatically.
+
+## Automatic color legend
+
+```ts
+import { colorLegend, colorLegendItems } from '@tanstack/charts/legend'
+
+colorLegend({
+  label: 'Package',
+  itemWidth: 120,
+  items: colorLegendItems({
+    justify: 'center',
+    gap: 16,
+    indicator: { shape: 'square' },
+    label: { fontSize: 12 },
+  }),
+  width: 240,
+  format: (value) => value.toFixed(0),
+  placement: 'bottom',
+})
+```
+
+```ts
+interface ColorLegendOptions<TValue extends ChartKey = ChartKey> {
+  label?: string
+  itemWidth?: number
+  items?: ColorLegendItems<TValue>
+  width?: number
+  format?: (value: number) => string
+  placement?: 'top' | 'bottom'
+}
+
+declare function colorLegendItems<TValue extends ChartKey = ChartKey>(
+  options?: ColorLegendItemOptions<TValue>,
+): ColorLegendItems<TValue>
+
+// Opaque presentation returned by colorLegendItems().
+interface ColorLegendItems<in TValue extends ChartKey = ChartKey> {}
+
+interface ColorLegendItemContext {
+  color: string
+  index: number
+  label: string
+}
+
+interface ColorLegendIndicatorRenderContext extends ColorLegendItemContext {
+  bounds: ChartBounds
+}
+
+type ColorLegendItemValue<TValue extends ChartKey, TResult> =
+  TResult | ((value: TValue, context: ColorLegendItemContext) => TResult)
+
+type ColorLegendIndicatorShape = 'dot' | 'square' | 'line' | 'line-dot'
+
+interface ColorLegendItemOptions<TValue extends ChartKey = ChartKey> {
+  justify?: 'start' | 'center' | 'stretch'
+  gap?: number
+  rowGap?: number
+  indicator?: ColorLegendIndicatorOptions<TValue>
+  label?: ColorLegendLabelOptions<TValue>
+}
+
+interface ColorLegendIndicatorOptions<TValue extends ChartKey = ChartKey> {
+  shape?: ColorLegendItemValue<TValue, ColorLegendIndicatorShape>
+  width?: number
+  height?: number
+  gap?: number
+  render?: (
+    value: TValue,
+    context: ColorLegendIndicatorRenderContext,
+  ) => SceneNode | readonly SceneNode[]
+}
+
+interface ColorLegendLabelOptions<TValue extends ChartKey = ChartKey> {
+  format?: (value: TValue) => string
+  fontSize?: number
+  fontWeight?: number
+  fill?: ColorLegendItemValue<TValue, string>
+  fillOpacity?: number
+}
+```
+
+`items` applies only to categorical scales. The default `stretch`
+justification uses equal-width columns. In this mode, `itemWidth` defaults to
+`110` and is clamped to a minimum of `64`. `start` and `center` instead measure
+each formatted label with the chart host's configured typography, wrap compact
+rows, and use `gap` between items. Invalid host measurements fall back to the
+same deterministic estimator used by chart layout.
+
+Configured items default to a `16` pixel compact-layout gap, an `8` pixel row
+gap, an `8` by `8` dot with a `5` pixel label gap, `11` pixel label text, and
+`String` label formatting. Measured label height reserves enough room for each
+row. If an indicator is wider than its allocated item, its bounds stop at the
+item edge.
+
+`indicator.shape` selects a dot, square, line, or line with an outlined point.
+`width`, `height`, and `gap` reserve the indicator box and its distance from
+the label. A custom `render` callback receives the categorical value plus
+`{ bounds, color, index, label }`; the built-in legend still measures, wraps,
+and positions the item. Label `fill` callbacks receive the same resolved color
+and formatted label. A line-dot center uses the chart background, or the host's
+`Canvas` color when that background is transparent, so it remains hollow on
+light and dark hosts.
+
+An item presentation can handle the same value type as its legend or a broader
+one. TypeScript rejects a narrower presentation because its callbacks could
+otherwise receive a value they do not accept.
+
+Continuous scales render a sampled ramp. Quantize, quantile, and threshold
+scales render exact range bins at their resolved thresholds. `width` and the
+top-level `format` configure these quantitative forms, and `items` is ignored.
+`placement` defaults to `top`.
+
+This mixed-series legend uses only the resolved color scale for labels and
+paint:
+
+```ts
+type Series = 'Revenue' | 'Orders'
+
+colorLegend({
+  placement: 'bottom',
+  items: colorLegendItems<Series>({
+    justify: 'center',
+    gap: 20,
+    rowGap: 10,
+    indicator: {
+      width: 20,
+      height: 14,
+      gap: 6,
+      shape: (series) => (series === 'Revenue' ? 'line-dot' : 'square'),
+    },
+    label: {
+      fontSize: 14,
+      fill: (_series, { color }) => color,
+    },
+  }),
+})
+```
+
+## Gradient legend
+
+```ts
+import { colorGradientLegend } from '@tanstack/charts/legend'
+
+colorGradientLegend({
+  label: 'Density',
+  steps: 48,
+  width: 240,
+  format: (value) => value.toFixed(1),
+  placement: 'bottom',
+})
+```
+
+```ts
+interface ColorGradientLegendOptions {
+  label?: string
+  steps?: number
+  width?: number
+  format?: (value: number) => string
+  placement?: 'top' | 'bottom'
+}
+```
+
+`steps` defaults to `32` and is clamped to at least `2`. `width` defaults to
+`240`, uses at least `80` when space permits, and is finally capped by the
+inner chart width. The legend requires a numeric first and last color-domain
+value and throws for a nonnumeric domain.
+
+## Interactive categorical legend
+
+```ts
+import { controlledSignal } from '@tanstack/charts/interaction/signal'
+import { interactiveColorLegend } from '@tanstack/charts/legend'
+
+interactiveColorLegend({
+  visible: controlledSignal(visibleSeries, setVisibleSeries),
+  placement: 'bottom',
+  ariaLabel: 'Series visibility',
+})
+```
+
+```ts
+interface InteractiveColorLegendChange<TValue extends ChartKey> {
+  type: 'toggle'
+  value: TValue
+  visible: boolean
+}
+
+interface InteractiveColorLegendItemContext {
+  visible: boolean
+}
+
+interface InteractiveColorLegendOptions<TValue extends ChartKey> {
+  hover?: 'series' | false
+  visible: ControlledSignal<
+    readonly TValue[],
+    InteractiveColorLegendChange<TValue>
+  >
+  placement?: 'top' | 'bottom'
+  ariaLabel?: string
+  itemWidth?: number
+  format?: (value: TValue) => string
+  itemAriaLabel?: (
+    value: TValue,
+    context: InteractiveColorLegendItemContext,
+  ) => string
+  emptyLabel?: string
+}
+```
+
+The application owns the current visible-value snapshot and handles each
+proposed replacement. The legend owns domain-ordered toggling, responsive
+layout, and native browser buttons. It filters series geometry and focus points
+after scale resolution, so hidden values remain in categorical and positional
+domains. A mark participates when its categorical `color` channel establishes
+series identity without a separate `z` channel. Dot marks also participate when
+`z` supplies their series and default color, with no separate `color` channel.
+
+The DOM hosts replace the scene fallback with native `button` elements. Static
+SVG output retains a noninteractive visual fallback. This control is not yet
+implemented by the React Native host.
+
+Set `hover: 'series'` to match inline mark states against the series under the
+pointer or on the focused legend button. Its state context has `source:
+'legend'`, and `matches('series')` identifies the emphasized category. Leaving
+or blurring restores the chart's interaction styling. Hidden series do not
+receive emphasis.
+
+Emphasis matches semantic series, not rendered color strings. Line and area
+marks can establish a series through categorical `color`. For dot marks, use
+`z: 'series'` to establish series ownership; `z` also supplies the default
+color channel, so a second `color: 'series'` is unnecessary. A color-only dot
+can vary its paint while remaining outside any semantic series.
+
+Legend emphasis does not set interaction focus, show a tooltip, move a
+crosshair, or activate `whenFocused` geometry. Existing pinned focus and its
+tooltip stay in place. Tick-label opacity still sees the real interaction
+focus. Static SVG remains noninteractive. A custom renderer must declare
+`supportsStateFocus: true` and honor the fourth `paintFocus` argument's
+`stateFocus`, otherwise requesting emphasis throws.
+
+## Custom legends
+
+`ChartColorLegend` separates layout from rendering:
+
+```ts
+interface ChartColorLegend {
+  height(itemCount: number, context: ChartColorLegendContext): number
+  placement?: 'top' | 'bottom'
+  render(context: ChartColorLegendContext): SceneNode
+}
+```
+
+`height` returns the reserved pixel height before chart bounds are finalized.
+Both callbacks receive the resolved colors, plot and legend bounds, theme, and
+full chart size. `render` returns one keyed
+[scene node](./runtime-and-scene.md#scene-nodes). Browser host controls are an
+advanced extension boundary used by `interactiveColorLegend`; ordinary custom
+legends should remain renderer-neutral scene output.
+
+## Theme and gradients
+
+The built-in theme is described in [Chart spec](./chart-spec.md#theme).
+Chart gradients are renderer-neutral resources:
+
+```ts
+interface ChartGradientBase {
+  id: string
+  stops: readonly ChartGradientStop[]
+}
+
+interface ChartGradientStop {
+  offset: number
+  color: string
+  opacity?: number
+}
+
+interface ChartLinearGradient extends ChartGradientBase {
+  type?: 'linear'
+  x1?: number
+  y1?: number
+  x2?: number
+  y2?: number
+}
+
+interface ChartRadialGradient extends ChartGradientBase {
+  type: 'radial'
+  cx?: number
+  cy?: number
+  r?: number
+  fx?: number
+  fy?: number
+}
+
+type ChartGradient = ChartLinearGradient | ChartRadialGradient
+```
+
+Coordinates and stop offsets use SVG-style `objectBoundingBox` values
+normalized from `0` to `1`. Renderers clamp values to that range. Stops keep
+their authored order, and an offset below the previous stop is clamped forward
+to the previous offset. A linear gradient may omit `type` for compatibility.
+Its omitted coordinates form a vertical gradient from bottom to top, from
+`(0, 1)` to `(0, 0)`. A radial gradient requires `type: 'radial'`; `cx`, `cy`,
+and `r` default to `0.5`, while omitted `fx` and `fy` independently inherit the
+resolved center coordinate.
+
+Reference either kind from a mark's `fill` or `stroke` as `url(#resource-id)`.
+SVG and React Native support both kinds for fills and strokes. Canvas renders
+exact `objectBoundingBox` radial fills, including the elliptical result on a
+non-square shape. Canvas radial strokes are not supported because a nonuniform
+bounds transform would also distort stroke width; the Canvas renderer throws
+instead of painting a misleading approximation. Linear gradients continue to
+support Canvas fills and strokes.
+
+`ChartGradient`, `ChartGradientBase`, `ChartGradientStop`,
+`ChartLinearGradient`, and `ChartRadialGradient` are type exports from
+`@tanstack/charts`, `@tanstack/charts/universal`, and
+`@tanstack/charts/types`. Use an `idPrefix` when charts share a document; see
+[Rendering and export](./rendering-and-export.md#svg-resources).

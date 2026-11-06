@@ -1,0 +1,2 @@
+/** Finds deterministic tangent offsets for circles along one fixed axis. */
+export declare function dodgeOffsets(measuredPositions: readonly number[], radii: readonly number[], padding: number, edgeAnchored: boolean): number[];

@@ -1,0 +1,12 @@
+import type { ChartPoint, ChartValue, MarkScene } from './types.js';
+export interface FilterMarkSceneOptions {
+    interaction?: 'preserve' | 'remove';
+}
+export interface StripMarkSceneInteractionOptions {
+    conditional?: 'remove' | 'reject' | 'preserve-states';
+}
+/** Removes every interaction-owned scene field without changing painted geometry. */
+export declare function stripMarkSceneInteraction<TDatum, TXValue extends ChartValue, TYValue extends ChartValue>(scene: MarkScene<TDatum, TXValue, TYValue>, options?: StripMarkSceneInteractionOptions): MarkScene<TDatum, TXValue, TYValue>;
+/** Filters painted mark output by semantic point after channels and scales resolve. */
+export declare function filterMarkSceneByPoint<TDatum, TXValue extends ChartValue, TYValue extends ChartValue>(scene: MarkScene<TDatum, TXValue, TYValue>, include: (point: ChartPoint<TDatum, TXValue, TYValue>) => boolean, options?: FilterMarkSceneOptions): MarkScene<TDatum, TXValue, TYValue>;
+export declare function collectMarkScenePoints<TDatum, TXValue extends ChartValue, TYValue extends ChartValue>(scene: MarkScene<TDatum, TXValue, TYValue>): readonly ChartPoint<TDatum, TXValue, TYValue>[];

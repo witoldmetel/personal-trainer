@@ -1,0 +1,216 @@
+import { scaleLinear } from "./linear.js";
+import { tickStep } from "./ticks.js";
+const day = 864e5;
+const year = 365 * day;
+const intervals = [
+  ["second", 1, 1e3],
+  ["second", 5, 5e3],
+  ["second", 15, 15e3],
+  ["second", 30, 3e4],
+  ["minute", 1, 6e4],
+  ["minute", 5, 3e5],
+  ["minute", 15, 9e5],
+  ["minute", 30, 18e5],
+  ["hour", 1, 36e5],
+  ["hour", 3, 108e5],
+  ["hour", 6, 216e5],
+  ["hour", 12, 432e5],
+  ["day", 1, day],
+  ["day", 2, 2 * day],
+  ["week", 1, 7 * day],
+  ["month", 1, 30 * day],
+  ["month", 3, 90 * day],
+  ["year", 1, year]
+];
+function scaleUtc(first, second) {
+  const linear = scaleLinear([9466848e5, 9467712e5], [0, 1]);
+  let dateStart = 9466848e5;
+  let dateSpan = day;
+  let outputStart = 0;
+  let outputSpan = 1;
+  let clamped = false;
+  function refreshMapping() {
+    const domain2 = linear.domain(), range2 = linear.range();
+    dateStart = domain2[0];
+    dateSpan = domain2[1] - domain2[0];
+    outputStart = range2[0];
+    outputSpan = range2[1] - range2[0];
+  }
+  function scale(value) {
+    if (value instanceof Date) {
+      const timestamp = value.getTime();
+      if (!Number.isFinite(timestamp)) return void 0;
+      let ratio = dateSpan ? (timestamp - dateStart) / dateSpan : 0.5;
+      if (clamped) ratio = Math.max(0, Math.min(1, ratio));
+      return outputStart + ratio * outputSpan;
+    }
+    if (value == null) return void 0;
+    return Math.abs(value) > 864e13 ? void 0 : linear(Math.trunc(value));
+  }
+  function domain(values) {
+    if (values === void 0) {
+      const [start, stop] = linear.domain();
+      return [new Date(start), new Date(stop)];
+    }
+    const resolved = Array.from(
+      values,
+      (value) => value == null ? NaN : new Date(Number(value)).getTime()
+    );
+    if (resolved.length !== 2 || resolved.some((value) => !Number.isFinite(value))) {
+      throw new TypeError("A UTC scale domain requires exactly two valid dates");
+    }
+    linear.domain(resolved);
+    refreshMapping();
+    return result;
+  }
+  function range(values) {
+    if (values === void 0) return linear.range();
+    linear.range(values);
+    refreshMapping();
+    return result;
+  }
+  function clamp(value) {
+    if (value === void 0) return linear.clamp();
+    linear.clamp(value);
+    clamped = Boolean(value);
+    return result;
+  }
+  function ticks(count = 10) {
+    const [a, b] = linear.domain();
+    const start = Math.min(a, b), stop = Math.max(a, b);
+    const interval = chooseInterval(start, stop, count);
+    if (!interval) return [];
+    const dates = [];
+    for (let value = ceil(start, interval); value <= stop; ) {
+      dates.push(new Date(value));
+      const next = offset(value, interval);
+      if (!(next > value)) break;
+      value = next;
+    }
+    return b < a ? dates.reverse() : dates;
+  }
+  function nice(count = 10) {
+    const [a, b] = linear.domain();
+    const interval = chooseInterval(Math.min(a, b), Math.max(a, b), count);
+    if (!interval) return result;
+    const start = floor(Math.min(a, b), interval), stop = ceil(Math.max(a, b), interval);
+    if (Math.abs(start) <= 864e13 && Math.abs(stop) <= 864e13) {
+      linear.domain(b < a ? [stop, start] : [start, stop]);
+      refreshMapping();
+    }
+    return result;
+  }
+  const result = Object.assign(scale, {
+    domain,
+    range,
+    clamp,
+    ticks,
+    nice,
+    invert: (value) => new Date(linear.invert(value)),
+    tickFormat: (_count) => formatUtc,
+    copy: () => scaleUtc(domain(), range()).clamp(clamp())
+  });
+  if (second !== void 0) {
+    if (first !== void 0) domain(first);
+    range(second);
+  } else if (first !== void 0) {
+    range(Array.from(first, Number));
+  }
+  return result;
+}
+function chooseInterval(start, stop, count) {
+  if (!(count > 0) || !Number.isFinite(count)) return void 0;
+  const target = (stop - start) / count;
+  if (target < 1e3)
+    return ["millisecond", Math.max(1, tickStep(start, stop, count) || 1), 1];
+  if (target >= year)
+    return [
+      "year",
+      Math.max(1, tickStep(start / year, stop / year, count)),
+      year
+    ];
+  let previous = intervals[0];
+  for (const next of intervals.slice(1)) {
+    if (target < next[2])
+      return target / previous[2] < next[2] / target ? previous : next;
+    previous = next;
+  }
+  return previous;
+}
+function floor(value, [unit, step, duration]) {
+  if (unit === "millisecond") return Math.floor(value / step) * step;
+  if (unit === "second" || unit === "minute" || unit === "hour" || unit === "day")
+    return Math.floor(value / duration) * duration;
+  if (unit === "week")
+    return Math.floor((value + 4 * day) / (7 * day)) * 7 * day - 4 * day;
+  const date = new Date(value);
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCDate(1);
+  if (unit === "month")
+    date.setUTCMonth(Math.floor(date.getUTCMonth() / step) * step);
+  else
+    date.setUTCFullYear(Math.floor(date.getUTCFullYear() / step) * step, 0, 1);
+  return date.getTime();
+}
+function offset(value, interval) {
+  const [unit, step, duration] = interval;
+  if (unit === "millisecond") return value + step;
+  if (unit === "second" || unit === "minute" || unit === "hour" || unit === "day" || unit === "week")
+    return value + duration;
+  const date = new Date(value);
+  if (unit === "month") date.setUTCMonth(date.getUTCMonth() + step);
+  else date.setUTCFullYear(date.getUTCFullYear() + step);
+  return floor(date.getTime(), interval);
+}
+function ceil(value, interval) {
+  const rounded = floor(value, interval);
+  if (!Number.isFinite(rounded)) {
+    const date = new Date(value);
+    const [unit, step] = interval;
+    if (unit === "month")
+      date.setUTCMonth(Math.floor(date.getUTCMonth() / step) * step + step, 1);
+    else if (unit === "year")
+      date.setUTCFullYear(
+        Math.floor(date.getUTCFullYear() / step) * step + step,
+        0,
+        1
+      );
+    else return NaN;
+    date.setUTCHours(0, 0, 0, 0);
+    return date.getTime();
+  }
+  return rounded < value ? offset(rounded, interval) : rounded;
+}
+const months = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December"
+];
+const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const pad = (value, width = 2) => String(value).padStart(width, "0");
+function formatUtc(date) {
+  if (!Number.isFinite(date.getTime())) return "Invalid Date";
+  if (date.getUTCMilliseconds()) return `.${pad(date.getUTCMilliseconds(), 3)}`;
+  if (date.getUTCSeconds()) return `:${pad(date.getUTCSeconds())}`;
+  const hour = date.getUTCHours();
+  if (date.getUTCMinutes())
+    return `${pad(hour % 12 || 12)}:${pad(date.getUTCMinutes())}`;
+  if (hour) return `${pad(hour % 12 || 12)} ${hour < 12 ? "AM" : "PM"}`;
+  if (date.getUTCDate() !== 1)
+    return `${date.getUTCDay() ? weekdays[date.getUTCDay()] : months[date.getUTCMonth()].slice(0, 3)} ${pad(date.getUTCDate())}`;
+  if (date.getUTCMonth()) return months[date.getUTCMonth()];
+  const value = date.getUTCFullYear();
+  return `${value < 0 ? "-" : ""}${pad(Math.abs(value), 4)}`;
+}
+export {
+  scaleUtc
+};

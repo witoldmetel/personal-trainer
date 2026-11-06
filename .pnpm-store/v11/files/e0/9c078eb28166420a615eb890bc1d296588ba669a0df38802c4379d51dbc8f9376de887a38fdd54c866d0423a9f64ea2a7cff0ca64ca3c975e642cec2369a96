@@ -1,0 +1,67 @@
+function createDecorativeMark(mark, transform, options) {
+  return {
+    motion: mark.motion,
+    renderer: mark.renderer,
+    initialize(context) {
+      const initialized = mark.initialize(context);
+      assertConditionalMetadata(initialized, initialized.id, options);
+      const {
+        focus: _focus,
+        states: _states,
+        resolveLayout,
+        ...initializedBase
+      } = initialized;
+      const base = withoutLayoutLabels(initializedBase, options.layoutLabels);
+      return {
+        ...base,
+        render: initialized.render,
+        postDomain: composePostDomain(
+          initialized.postDomain,
+          transform,
+          initialized
+        ),
+        ...resolveLayout ? {
+          resolveLayout(layoutContext) {
+            const resolved = resolveLayout(layoutContext);
+            assertConditionalMetadata(resolved, initialized.id, options);
+            const { states: _resolvedStates, ...resolvedBase } = resolved;
+            const resolvedWithoutLabels = withoutLayoutLabels(
+              resolvedBase,
+              options.layoutLabels
+            );
+            return {
+              ...resolvedWithoutLabels,
+              render: resolved.render,
+              postDomain: composePostDomain(
+                resolved.postDomain ?? initialized.postDomain,
+                transform,
+                {
+                  id: initialized.id,
+                  states: resolved.states ?? initialized.states
+                }
+              )
+            };
+          }
+        } : {}
+      };
+    }
+  };
+}
+function assertConditionalMetadata(mark, id, options) {
+  if (options.conditional !== "remove" && (mark.focus !== void 0 || options.conditional === "reject" && mark.states !== void 0)) {
+    throw new TypeError(
+      `decorative() cannot wrap mark "${id}" with focus or state behavior`
+    );
+  }
+}
+function withoutLayoutLabels(value, policy) {
+  if (policy === "preserve") return value;
+  const { layoutLabels: _layoutLabels, ...rest } = value;
+  return rest;
+}
+function composePostDomain(existing, transform, metadata) {
+  return (scene) => transform(existing ? existing(scene) : scene, metadata);
+}
+export {
+  createDecorativeMark
+};

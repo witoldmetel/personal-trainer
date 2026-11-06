@@ -1,0 +1,16 @@
+import type { Arc } from 'd3-shape';
+export interface PolarSectorGeometry {
+    readonly startAngle: number;
+    readonly endAngle: number;
+    readonly innerRadius: number;
+    readonly outerRadius: number;
+    readonly cornerRadius: number;
+}
+export interface ResolvedPolarSector {
+    readonly path: string;
+    readonly points: readonly (readonly [number, number])[];
+}
+export declare function projectPolarSector(sector: PolarSectorGeometry): string | undefined;
+/** Resolves one D3 sector and samples its painted interaction boundary. */
+export declare function resolvePolarSector(sector: PolarSectorGeometry): ResolvedPolarSector | undefined;
+export declare function tracePolarArcBoundary<TDatum>(generator: Arc<any, TDatum>, datum: TDatum, index: number, data: readonly TDatum[]): readonly (readonly [number, number])[];

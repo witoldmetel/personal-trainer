@@ -1,0 +1,836 @@
+---
+title: Rendering and Export
+description: Render chart scenes through the default SVG renderer, the optional Canvas renderer, or a custom surface, then export supported output.
+---
+
+TanStack Charts compiles a renderer-neutral scene. The default renderer turns
+that scene into accessible SVG markup; an optional Canvas renderer paints the
+same scene through Canvas 2D. Both use the shared responsive, interaction,
+tooltip, keyboard, and runtime host.
+
+Use the task-oriented [Exporting guide](../guides/exporting.md) to choose
+between static scene rendering, mounted SVG serialization, and raster output.
+
+## Choose a renderer
+
+Renderer code stays behind explicit entry points:
+
+| Use                              | Import                                                |
+| -------------------------------- | ----------------------------------------------------- |
+| Default vanilla SVG host         | `mountChart` from `@tanstack/charts/dom`              |
+| Vanilla Canvas host              | `mountCanvasChart` from `@tanstack/charts/canvas`     |
+| Tween and spring SVG renderer    | `motion` from `@tanstack/charts/motion`               |
+| Renderer-neutral host            | `mountChartRenderer` from `@tanstack/charts/renderer` |
+| Default React SVG component      | `Chart` from `@tanstack/charts/react`                 |
+| Default Preact SVG component     | `Chart` from `@tanstack/charts/preact`                |
+| Default Vue SVG component        | `Chart` from `@tanstack/charts/vue`                   |
+| Default Solid SVG component      | `Chart` from `@tanstack/charts/solid`                 |
+| Default Svelte SVG component     | `Chart` from `@tanstack/charts/svelte`                |
+| Default Angular SVG component    | `Chart` from `@tanstack/charts/angular`               |
+| Default Lit SVG element          | `Chart` from `@tanstack/charts/lit`                   |
+| Default Alpine SVG directive     | `charts` from `@tanstack/charts/alpine`               |
+| React Native SVG component       | `Chart` from `@tanstack/charts/react-native`          |
+| React Canvas component           | `Chart` from `@tanstack/charts/react/canvas`          |
+| React custom-renderer component  | `Chart` from `@tanstack/charts/react/core`            |
+| Default Octane SVG component     | `Chart` from `@tanstack/charts/octane`                |
+| Octane Canvas component          | `Chart` from `@tanstack/charts/octane/canvas`         |
+| Octane custom-renderer component | `Chart` from `@tanstack/charts/octane/core`           |
+
+The default package and adapter entries do not import Canvas. Applications pay
+for it only when they import a Canvas entry. Motion is likewise isolated behind
+`@tanstack/charts/motion`. The `/core` adapter entries accept an explicit
+`renderer` without choosing one for the application.
+
+A default SVG host can still compose selected Canvas marks. Import
+`canvasChartRenderer` from `@tanstack/charts/canvas` and attach it to those
+marks. The default adapter remains the host, and the Canvas painter enters the
+module graph through that explicit import.
+
+## React Native adapter
+
+The React Native adapter is experimental. See
+[Installation](../installation.md#react-native-and-expo) for supported versions,
+verified checks, and native-device validation limits.
+
+The React Native entry selects its native build through the package export
+conditions and renders the shared scene with `react-native-svg`.
+
+```ts
+import {
+  Chart,
+  resolveNativePaint,
+  type NativeChartRenderContext,
+  type NativeChartTooltipRenderContext,
+  type NativePaintContext,
+  type NativePaintResolver,
+} from '@tanstack/charts/react-native'
+import {
+  tooltip,
+  type NativeChartTooltipComponent,
+  type NativeChartTooltipExtension,
+  type NativeChartTooltipProps,
+} from '@tanstack/charts/react-native/tooltip'
+```
+
+`NativeChartRenderContext` is passed to `Chart`'s `onRender` callback.
+`NativeChartTooltipRenderContext` is passed to a custom tooltip renderer.
+`NativeChartTooltipProps` describes the built-in native tooltip component,
+whose component and extension contracts are `NativeChartTooltipComponent` and
+`NativeChartTooltipExtension`.
+
+Use `resolveNativePaint` as the default `NativePaintResolver`. It resolves
+`currentColor`, Canvas system colors, and CSS-variable fallbacks against a
+`NativePaintContext`. Pass a custom resolver through `Chart` when the
+application owns additional paint tokens.
+
+## `renderChartSvg`
+
+```ts
+import { renderChartSvg } from '@tanstack/charts/svg'
+
+const markup = renderChartSvg(scene, {
+  ariaLabel: 'Weekly revenue',
+  ariaDescription: 'Revenue increased through the second quarter.',
+  idPrefix: 'revenue',
+})
+```
+
+```ts
+function renderChartSvg(
+  scene: ChartScene,
+  options: RenderChartSvgOptions,
+): string
+
+interface RenderChartSvgOptions {
+  ariaLabel: string
+  ariaDescription?: string
+  className?: string
+  tabIndex?: number
+  idPrefix?: string
+}
+```
+
+| Option            | Default  | Meaning                                               |
+| ----------------- | -------- | ----------------------------------------------------- |
+| `ariaLabel`       | Required | Accessible SVG name                                   |
+| `ariaDescription` | None     | Escaped SVG `<desc>` content                          |
+| `className`       | None     | Added after the `ts-chart` class                      |
+| `tabIndex`        | `0`      | SVG tab index for direct static rendering             |
+| `idPrefix`        | Empty    | Prefix passed to renderers that generate document IDs |
+
+The SVG uses `role="img"`, `aria-roledescription="chart"`, a responsive
+`width="100%"` and `height="100%"`, the scene's dimensions as its `viewBox`,
+and an overflow-visible display style. A nontransparent scene background
+renders as the first rect. All labels escape text and inherit the document
+font.
+
+Focus-filtered scene groups render hidden until the DOM host supplies focus
+state. Data-less crosshair guides are also transient and are absent from this
+static serialization because no focus or cursor state was supplied. Scene keys
+become `data-ts-key` attributes for reconciliation.
+
+## Canvas renderer
+
+```ts
+import { mountCanvasChart } from '@tanstack/charts/canvas'
+import { tooltip } from '@tanstack/charts/tooltip'
+
+const interactiveDefinition = defineChart(definition, { tooltip })
+
+const host = mountCanvasChart(container, {
+  definition: interactiveDefinition,
+  ariaLabel: 'Weekly revenue',
+})
+```
+
+`mountCanvasChart` has the same definition, sizing, focus, spatial-index,
+keyboard, tooltip, selection, update, and destroy behavior as `mountChart`.
+The renderer paints authored focus layers and crosshair guides below or above
+the base scene on separate canvases, uses the browser device-pixel ratio by
+default, and maps pointer coordinates back into the scene.
+
+```ts
+interface CanvasChartRendererOptions {
+  pixelRatio?: number
+}
+
+interface CanvasChartSurface<
+  TDatum = unknown,
+  TXValue extends ChartValue = ChartValue,
+  TYValue extends ChartValue = ChartValue,
+> extends ChartSurface<TDatum, TXValue, TYValue> {
+  readonly element: HTMLDivElement
+  readonly canvas: HTMLCanvasElement
+  readonly backgroundCanvas: HTMLCanvasElement
+  readonly focusUnderCanvas: HTMLCanvasElement
+  readonly sceneCanvas: HTMLCanvasElement
+  readonly focusCanvas: HTMLCanvasElement
+}
+
+interface CanvasChartRenderer<
+  TDatum = unknown,
+  TXValue extends ChartValue = ChartValue,
+  TYValue extends ChartValue = ChartValue,
+> extends ChartLayerRenderer<TDatum, TXValue, TYValue> {
+  mount: (
+    container: HTMLElement,
+    requestRender: (force?: boolean) => void,
+  ) => CanvasChartSurface<TDatum, TXValue, TYValue>
+}
+
+type CanvasChartHostOptions<
+  TDatum = unknown,
+  TXValue extends ChartValue = ChartValue,
+  TYValue extends ChartValue = ChartValue,
+> = Omit<ChartRendererHostOptions<TDatum, TXValue, TYValue>, 'renderer'>
+
+interface CanvasChartHost<
+  TDatum = unknown,
+  TXValue extends ChartValue = ChartValue,
+  TYValue extends ChartValue = ChartValue,
+> {
+  update: (options: CanvasChartHostOptions<TDatum, TXValue, TYValue>) => void
+  getScene: () => ChartScene<TDatum, TXValue, TYValue>
+  destroy: () => void
+}
+
+function createCanvasChartRenderer<
+  TDatum = unknown,
+  TXValue extends ChartValue = ChartValue,
+  TYValue extends ChartValue = ChartValue,
+>(
+  options?: CanvasChartRendererOptions,
+): CanvasChartRenderer<TDatum, TXValue, TYValue>
+
+const canvasChartRenderer: CanvasChartRenderer
+
+function mountCanvasChart<
+  TDatum,
+  TXValue extends ChartValue = ChartValue,
+  TYValue extends ChartValue = ChartValue,
+>(
+  container: HTMLElement,
+  initialOptions: CanvasChartHostOptions<TDatum, TXValue, TYValue>,
+  runtime?: ChartRuntime<TDatum, TXValue, TYValue>,
+): CanvasChartHost<TDatum, TXValue, TYValue>
+```
+
+The surface's `element` is its accessible chart root. `canvas` is the stable
+base bitmap: chart background plus ordinary scene, without transient focus.
+It remains suitable for direct `toBlob()` and `toDataURL()` calls and is not
+part of the live visual stack. The live stack is `backgroundCanvas`,
+`focusUnderCanvas`, `sceneCanvas`, then `focusCanvas`. This lets an underlay
+paint above an opaque chart background but below ordinary marks without
+repainting the stable base bitmap on cursor movement.
+
+A finite, positive `pixelRatio` fixes every backing store at that ratio. An
+omitted value uses `devicePixelRatio`, then `1`; an invalid value uses `1`.
+
+`CanvasChartHostOptions` removes the required `renderer` from the
+renderer-neutral host options. The returned `CanvasChartHost` owns update,
+scene access, and cleanup. Its optional runtime parameter has the same advanced
+prerender-reuse contract as [`mountChart`](./dom-host.md#signature), including
+runtime ownership on destroy.
+
+Use `canvasChartRenderer` for the shared default instance. Call
+`createCanvasChartRenderer` when the application needs a fixed `pixelRatio` or
+an independently typed renderer instance.
+
+The server-facing `prerender` step emits a deterministic, named chart shell
+with five `aria-hidden` canvases: the hidden stable `canvas` base bitmap plus
+the public `backgroundCanvas`, `focusUnderCanvas`, `sceneCanvas`, and
+`focusCanvas` live layers. It does not attempt server-side pixel painting. The
+browser adopts that shell, sizes the backing stores, paints the scene, and
+attaches the shared interaction host. See
+[SSR and Hydration](../guides/ssr-and-hydration.md).
+
+Canvas is an escape hatch for paint-heavy SVG output, not an unbounded-data
+mode. Scene compilation, channel arrays, scene nodes, and interaction points
+still exist. A default nearest-point lookup remains linear unless the chart
+supplies a `spatialIndex`; measure the complete pipeline and bound or aggregate
+output when pixels cannot distinguish the observations.
+
+Renderer-specific tradeoffs:
+
+- Canvas updates raster pixels instead of retaining one DOM element per scene
+  node.
+- Canvas animation crossfades complete frames; SVG animation reconciles and
+  interpolates keyed elements.
+- Curved, polar, and geographic `path` geometry requires browser `Path2D`.
+- Structured `SceneArea.polygons` render directly and do not require `Path2D`.
+- Scene-node `className` values do not create styleable Canvas descendants.
+- Gradients require geometry with measurable bounds.
+- Radial gradients support Canvas fills only. A radial stroke throws rather
+  than changing stroke width under a nonuniform bounds transform.
+
+Linear gradients map their normalized endpoints directly into each node's
+bounds. Radial fills are clipped to the node, then painted in normalized unit
+space under the node's bounds transform. This preserves SVG
+`objectBoundingBox` behavior, including an elliptical gradient on a non-square
+node.
+
+## SVG resources
+
+```ts
+import { renderChartSvg } from '@tanstack/charts/svg'
+import { renderChartSvgWithResources } from '@tanstack/charts/svg/resources'
+```
+
+`renderChartSvg` and the compatible explicit
+`renderChartSvgWithResources(scene, options)` entry both:
+
+- emit declared linear and radial gradients in `<defs>`
+- scope gradient IDs with sanitized `idPrefix`
+- rewrite matching `url(#gradient-id)` paints
+- emit clip paths for scene groups with `clip` bounds
+
+Default SVG hosts and framework adapters use this behavior without a custom
+`renderSvg`. Use a stable, document-unique `idPrefix`. Gradient coordinates and
+stop offsets are clamped to `0..1` and emitted as percentages. A radial
+gradient defaults to center `(0.5, 0.5)` and radius `0.5`; each omitted focal
+coordinate inherits the matching center coordinate.
+
+The React Native adapter emits matching `LinearGradient` and `RadialGradient`
+resources through `react-native-svg`. Its `Chart` generates an `idPrefix` with
+`useId()` unless the application supplies one, then scopes resource IDs and
+rewrites matching paints in the same way as the web adapters.
+
+## `reconcileChartSvg`
+
+```ts
+import { reconcileChartSvg } from '@tanstack/charts/reconcile'
+
+const cancel = reconcileChartSvg(container, nextMarkup, {
+  duration: 240,
+  easing: 'ease-out',
+})
+
+cancel()
+```
+
+```ts
+function reconcileChartSvg(
+  container: HTMLElement,
+  markup: string,
+  animation?: ChartAnimationOptions,
+): () => void
+```
+
+The reconciler adopts a compatible existing root, matches children by
+`data-ts-key`, moves retained nodes into their new order, inserts entries, and
+removes exits. When a node has no explicit key, same-tag sibling order is a
+fallback identity.
+
+Without animation, changed attributes and structure commit synchronously.
+With animation:
+
+- numeric attributes with compatible string structure interpolate
+- entries fade from zero opacity
+- exits fade to zero and are then removed
+- noninterpolable values commit immediately
+- a returned cancellation function stops the current frame loop
+
+The DOM host calls reconciliation and cancellation for you.
+
+Custom SVG renderers that already own a keyed subtree can reconcile only that
+subtree without reparsing or walking the surrounding chart:
+
+```ts
+import { reconcileChartSvgFragment } from '@tanstack/charts/reconcile'
+
+const cancel = reconcileChartSvgFragment(currentGroup, nextGroupMarkup, {
+  duration: 180,
+})
+```
+
+```ts
+function reconcileChartSvgFragment(
+  currentRoot: SVGElement,
+  markup: string,
+  animation?: ChartAnimationOptions,
+): () => void
+```
+
+The fragment root must keep the same namespace and element name to preserve
+its identity. Otherwise the reconciler replaces it. Child keying, tweening,
+and cancellation match `reconcileChartSvg`.
+
+## Animation options
+
+```ts
+interface ChartAnimationOptions {
+  duration?: number
+  easing?:
+    | 'linear'
+    | 'ease'
+    | 'ease-in'
+    | 'ease-out'
+    | 'ease-in-out'
+    | ((progress: number) => number)
+  respectReducedMotion?: boolean
+  resize?: boolean
+}
+```
+
+| Option                 | Default      | Meaning                                                |
+| ---------------------- | ------------ | ------------------------------------------------------ |
+| `duration`             | `240`        | Animation length in milliseconds, clamped to zero      |
+| `easing`               | `'ease-out'` | Named built-in easing or a progress-mapping function   |
+| `respectReducedMotion` | `true`       | Lets a host suppress animation for reduced-motion mode |
+| `resize`               | `false`      | Animates responsive and explicit host size changes     |
+
+On a definition, `svgAnimation: true` uses `240` milliseconds, `ease-out`, and respects
+`prefers-reduced-motion: reduce`. A numeric duration is clamped to at least
+zero. A custom easing receives raw progress from `0` to `1`.
+
+`respectReducedMotion` and `resize` are definition policies enforced by the
+host. Direct
+`reconcileChartSvg(container, markup, animation)` calls run the supplied
+animation without consulting media queries or render reasons.
+
+Host animation begins only after the initial render. Updates without a scene
+render do not start an animation; the current animation options apply to the
+next reconciliation. Responsive and explicit size changes commit immediately
+unless `resize: true`.
+
+Stable mark IDs and resolved datum identities are essential for meaningful
+transitions.
+
+## SVG serialization
+
+```ts
+import { downloadChartSvg, serializeChartSvg } from '@tanstack/charts/export'
+
+const source = serializeChartSvg(container, {
+  width: 1200,
+  height: 600,
+  includeFocus: false,
+})
+
+downloadChartSvg(container, 'revenue.svg')
+```
+
+The subpath exports `serializeChartSvg`, `downloadChartSvg`, and the
+`SerializeChartSvgOptions` type.
+
+```ts
+interface SerializeChartSvgOptions {
+  width?: number
+  height?: number
+  includeFocus?: boolean
+}
+```
+
+`target` may be the SVG or an ancestor containing `svg.ts-chart`. The serializer
+clones the SVG, adds the XML namespace, removes focus-filtered scene layers
+unless `includeFocus` is true, and resolves dimensions from options, then the
+`viewBox`, then client dimensions.
+
+The serializer can inline computed `color`, fill, fill opacity, font family,
+font size, font weight, opacity, stroke, stroke opacity, stroke width, and
+stroke dash array when they depend on inherited font, `currentColor`, or CSS
+custom properties. Linear and radial resources remain in the cloned `<defs>`,
+and their stop color and opacity receive the same treatment. Keep other
+CSS-dependent resource styling explicit until it is part of that serialization
+contract.
+
+`downloadChartSvg(target, filename?, options?)` defaults to `chart.svg` and
+downloads an SVG blob through the target's document.
+
+## Browser image export
+
+```ts
+import { downloadChartImage, renderChartImage } from '@tanstack/charts/export'
+
+const blob = await renderChartImage(container, {
+  type: 'image/webp',
+  scale: 2,
+  background: '#fff',
+  quality: 0.9,
+})
+
+await downloadChartImage(container, 'revenue.png', {
+  scale: 2,
+})
+```
+
+The browser image functions are `renderChartImage` and
+`downloadChartImage`.
+
+```ts
+interface RenderChartImageOptions extends SerializeChartSvgOptions {
+  scale?: number
+  background?: string
+  type?: 'image/png' | 'image/jpeg' | 'image/webp'
+  quality?: number
+}
+```
+
+Despite its historical name, `RenderChartImageOptions` supports PNG, JPEG, and
+WebP. `scale` defaults to `2` and is clamped to at least `0.1`. `type` defaults
+to `image/png`.
+
+Encoding support depends on the browser. If the requested encoder is
+unavailable, the browser can return PNG instead, including WebP requests in
+WebKit. Check the returned `blob.type` before choosing a filename or sending
+the image to a consumer that requires a specific format.
+
+Raster export requires:
+
+- a browser document and window
+- nonzero chart dimensions
+- Canvas 2D
+- successful browser decoding when the source is SVG
+
+The promise rejects when any requirement fails or Canvas encoding returns no
+blob. `downloadChartImage` defaults to `chart.png`; keep the filename extension
+consistent with the actual encoded MIME type. The download helper uses the
+filename you supply and does not rename it after an encoding fallback.
+
+The raster helpers accept a mounted SVG, Canvas, or mixed chart root, or an
+ancestor containing one. SVG is serialized, decoded, and drawn into the export
+canvas. Canvas uses the stable `canvas` base bitmap directly when focus is
+excluded. With `includeFocus`, it composites `backgroundCanvas`,
+`focusUnderCanvas`, `sceneCanvas`, and `focusCanvas` in that order. Mixed roots
+draw every child surface in visual order. `serializeChartSvg` and
+`downloadChartSvg` reject mixed roots and remain SVG-only.
+
+## Mark-level renderers
+
+Built-in Cartesian, radial, and composite marks accept a `renderer` option.
+Passing `canvasChartRenderer` opts that mark into Canvas while axes, guides,
+and marks without the option keep the host renderer:
+
+```ts
+import { areaY, defineChart, lineY, text } from '@tanstack/charts'
+import { canvasChartRenderer } from '@tanstack/charts/canvas'
+import { scaleLinear } from '@tanstack/charts/scales/linear'
+import { scaleUtc } from 'd3-scale'
+
+const definition = defineChart({
+  marks: [
+    areaY(denseRows, {
+      x: 'time',
+      y: 'value',
+      renderer: canvasChartRenderer,
+    }),
+    lineY(summaryRows, { x: 'time', y: 'value' }),
+    text(labels, { x: 'time', y: 'value', text: 'label' }),
+  ],
+  scales: {
+    x: { scale: scaleUtc },
+    y: { scale: scaleLinear },
+  },
+})
+```
+
+Adjacent nodes with the same renderer share a layer. Alternating renderer runs
+remain in declaration order, including nested runs inside facets, composites,
+and `polar`. Server output contains one accessible mixed root with
+deterministic child shells, and the browser adopts those shells. Direct
+`renderChartSvg(scene, options)` calls remain an explicit SVG serialization of
+the complete renderer-neutral scene and do not run surface composition.
+
+The universal mark contract stays small:
+
+```ts
+interface ChartMarkRenderer {
+  readonly kind: 'chart-layer-renderer'
+  readonly id: string
+}
+
+interface ChartMarkOptions {
+  renderer?: ChartMarkRenderer
+}
+```
+
+A renderer that mounts one DOM layer implements the complete composition
+contract:
+
+```ts
+interface ChartLayerRenderer<
+  TDatum = unknown,
+  TXValue extends ChartValue = ChartValue,
+  TYValue extends ChartValue = ChartValue,
+>
+  extends ChartRenderer<TDatum, TXValue, TYValue>, ChartMarkRenderer {
+  compose: (
+    defaultRenderer: ChartRenderer<TDatum, TXValue, TYValue>,
+  ) => ChartRenderer<TDatum, TXValue, TYValue>
+}
+
+interface UniversalChartLayerRenderer
+  extends UniversalChartRenderer, ChartMarkRenderer {
+  compose: (
+    defaultRenderer: ChartRenderer<any, any, any>,
+  ) => ChartRenderer<any, any, any>
+}
+```
+
+The first non-default mark renderer supplies the compositor. The built-in
+Canvas renderer can compose normal `ChartRenderer` surfaces and exposes the
+result as one `ChartSurface`. Custom DOM layer renderers can set
+`compose: composeChartLayers`, imported from `@tanstack/charts/layers`, to reuse
+that orchestration without retaining Canvas painting code. The function accepts
+a `ChartRenderer<TDatum, TXValue, TYValue>` and returns a compositor with the
+same types, cached by default renderer object identity.
+
+The lower-level `createLayeredChartRenderer` factory is also exported from
+`@tanstack/charts/canvas`. It creates a new compositor on each call and uses the
+type-erased renderer contract needed for heterogeneous layers. Prefer the typed,
+cached `composeChartLayers` callback for custom mark renderers so updates do not
+replace the compositor and remount its surfaces.
+
+Mark motion and renderer selection are independent in the authoring API. The
+built-in factories preserve both options, and `createMark` keeps motion as its
+second argument and accepts the renderer as its third. The optional
+`motion()` renderer consumes tween and spring policy only on layers it owns.
+`canvasChartRenderer` paints the final mark scene and does not interpret that
+policy. A host `svgAnimation` can still crossfade complete Canvas frames while
+SVG layers reconcile keyed elements. Changing the layer renderer sequence
+remounts the composition, so that structural update does not animate between
+the old and new surface layout.
+
+## Custom renderers
+
+The renderer-neutral boundary consists of a renderer instance contract and
+the mounted surface it returns:
+
+```ts
+interface ChartSurfaceRenderOptions extends RenderChartOptions {
+  animation?: ChartAnimationOptions
+}
+
+interface ChartSurface<
+  TDatum = unknown,
+  TXValue extends ChartValue = ChartValue,
+  TYValue extends ChartValue = ChartValue,
+> {
+  readonly renderer: ChartRenderer<TDatum, TXValue, TYValue>
+  readonly element: Element
+  readonly layers?: readonly ChartSurface<TDatum, TXValue, TYValue>[]
+  readonly defaultElement?: Element
+  render: (
+    scene: ChartScene<TDatum, TXValue, TYValue>,
+    options: ChartSurfaceRenderOptions,
+  ) => void
+  clientToScene?: (
+    scene: ChartScene<TDatum, TXValue, TYValue>,
+    clientX: number,
+    clientY: number,
+  ) => { x: number; y: number } | null
+  getPresentationPoints?: () =>
+    readonly ChartPoint<TDatum, TXValue, TYValue>[] | undefined
+  subscribePresentationPoints?: (
+    listener: (points: readonly ChartPoint<TDatum, TXValue, TYValue>[]) => void,
+  ) => () => void
+  paintFocus: (
+    focus: ChartFocusState<TDatum, TXValue, TYValue> | null,
+    pointer?: ChartTooltipPosition | null,
+    cursor?: ChartCursorPresentation<TXValue, TYValue> | null,
+    options?: { stateFocus: ChartFocusState<TDatum, TXValue, TYValue> | null },
+  ) => ChartScene | void
+  readonly supportsStateFocus?: true
+  destroy: () => void
+}
+
+interface ChartRenderer<
+  TDatum = unknown,
+  TXValue extends ChartValue = ChartValue,
+  TYValue extends ChartValue = ChartValue,
+> {
+  readonly id: string
+  readonly capabilities?: ChartRendererCapabilities
+  prerender: (
+    scene: ChartScene<TDatum, TXValue, TYValue>,
+    options: RenderChartOptions,
+  ) => string
+  mount: (
+    container: HTMLElement,
+    requestRender: (force?: boolean) => void,
+  ) => ChartSurface<TDatum, TXValue, TYValue>
+}
+
+interface ChartRendererRenderContext<
+  TDatum = unknown,
+  TXValue extends ChartValue = ChartValue,
+  TYValue extends ChartValue = ChartValue,
+> {
+  container: HTMLElement
+  scene: ChartScene<TDatum, TXValue, TYValue>
+  surface: ChartSurface<TDatum, TXValue, TYValue>
+  interaction: ChartInteractionController<TDatum, TXValue, TYValue>
+}
+```
+
+`element` can be a live getter. Read it after the initial `render`; a renderer
+may not create its root during `mount`. When wrapping a surface, forward
+`element` through a getter instead of spreading the surface into a new object.
+Spreading evaluates the getter immediately and caches that root, so it can
+throw before rendering or keep an element that the renderer later replaces.
+
+`element` is the one accessible, interactive root. `surface.destroy()` releases animation work,
+subscriptions, and renderer resources. The mounting host owns removal of the
+chart root and cleanup of its interaction listeners.
+
+`layers`, when present,
+lists child surfaces from back to front. `defaultElement` is the topmost
+surface element owned by the host's default renderer. SVG-oriented
+`ChartRenderContext` callbacks expose that element as `svg` and also include
+the complete renderer-neutral `surface`. `ChartRendererRenderContext` exposes
+the complete surface directly.
+
+```ts
+interface ChartRenderContext<
+  TDatum = unknown,
+  TXValue extends ChartValue = ChartValue,
+  TYValue extends ChartValue = ChartValue,
+> {
+  container: HTMLElement
+  svg: SVGSVGElement
+  scene: ChartScene<TDatum, TXValue, TYValue>
+  surface: ChartSurface<TDatum, TXValue, TYValue>
+  interaction: ChartInteractionController<TDatum, TXValue, TYValue>
+}
+```
+
+| Member                          | Responsibility                                                                                                                 |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `ChartRenderer.id`              | Stable renderer identifier                                                                                                     |
+| `ChartRenderer.capabilities`    | Expose optional versioned services that the shared host injects into extensions                                                |
+| `prerender()`                   | Return deterministic accessible markup for the supplied scene and render options                                               |
+| `mount()`                       | Adopt or create a surface in the container and connect renderer-owned environment observers                                    |
+| `ChartSurface.renderer`         | Refer to the renderer that created the surface; a different renderer object on update replaces the surface                     |
+| `ChartSurface.element`          | Expose the accessible, focusable root used by shared keyboard and focus handling                                               |
+| `ChartSurface.layers`           | Expose ordered child surfaces when this surface composes more than one renderer                                                |
+| `ChartSurface.defaultElement`   | Expose the topmost element owned by the host's default renderer                                                                |
+| `render()`                      | Paint the complete scene and apply accessible name, class, tab index, ID prefix, and optional animation                        |
+| `clientToScene()`               | Optionally convert viewport client coordinates to scene coordinates; the controller returns `null` when omitted or unavailable |
+| `getPresentationPoints()`       | Expose renderer-owned point geometry while a scene transition is active                                                        |
+| `subscribePresentationPoints()` | Notify the host as presentation geometry advances so focus and tooltips remain aligned                                         |
+| `paintFocus()`                  | Paint or clear authored focus layers and guides, then optionally return the destination scene used for subsequent pointer hits |
+| `destroy()`                     | Release renderer-owned animation, observers, listeners, and resources                                                          |
+
+Presentation-point subscriptions track temporary interaction geometry, not
+completion of every animation layer. See [Observing motion and styling SVG](./motion.md#observing-motion-and-styling-svg)
+for scene-settling semantics, cancellation, and the limits of renderer DOM hooks.
+
+### Rectangle geometry helpers
+
+Custom rectangle renderers can share the built-in corner-fit policy:
+
+```ts
+import {
+  rectCornerRadiiPath,
+  resolveRectCornerRadii,
+} from '@tanstack/charts/renderer/rect'
+```
+
+`resolveRectCornerRadii(corners, width, height)` changes invalid or negative
+values to zero and proportionally fits adjacent radii within the rectangle.
+`rectCornerRadiiPath(x, y, width, height, corners)` serializes the same
+normalized geometry as a stable SVG path. The helper accepts reversed width or
+height and keeps the tuple in physical corner order.
+
+`requestRender()` asks the shared host to rebuild and repaint on its next
+animation frame; ordinary requests proceed only when a container-owned width
+or height changed.
+`requestRender(true)` forces the work when renderer state changed without a
+width or chart-option change, such as device-pixel ratio or resolved theme
+colors. Requests made before the same frame are coalesced.
+
+Renderer capabilities are structural so independently bundled package
+entrypoints do not need shared object or symbol identity. A renderer can expose
+`capabilities.tooltipMotion` with protocol `1`; the host creates its controller
+and injects it as `ChartTooltipExtensionContext.motion`. Renderers that omit the
+capability do not load or run tooltip motion code.
+
+Animated renderers can expose their current point geometry through
+`getPresentationPoints()` and notify the host through
+`subscribePresentationPoints()`. The host then resolves stationary pointers,
+pinned tooltips, and keyboard focus against the painted positions rather than
+the destination scene.
+
+When focus activates inline mark-state geometry, return the resolved scene that
+the surface paints. The host uses that destination scene for subsequent
+pointer resolution while the renderer animates toward it. Returning `void`
+keeps the base scene as the interaction source and remains valid for renderers
+that do not resolve alternate scene geometry.
+
+Custom surfaces can reuse the environment-safe focus lifecycle exported from
+the root and `/universal` entries:
+
+```ts
+const focusedScene = resolveFocusScene(scene, focus).scene
+const under = focusedSceneNodes(focusedScene, focus, 'under')
+const over = focusedSceneNodes(focusedScene, focus, 'over')
+```
+
+`resolveFocusScene` materializes retargetable focus candidates under stable
+keys. `focusedSceneNodes` returns the ordinary nodes for the requested paint
+placement. `resolveFocusPresentation(scene, focus, pointer, cursor)` applies
+that lifecycle and returns renderer-neutral `under` and `over` nodes. Paint
+them in this order: `under`, the base scene, then `over`. The optional cursor
+argument is the controller state projected into this surface's plot and can
+drive a crosshair without datum focus. This is the same path used by the SVG,
+Canvas, and React Native surfaces.
+
+The shared host continues to own runtime updates, responsive sizing, text
+measurement, focus resolution, keyboard behavior, built-in tooltips, selection,
+and callbacks. `ChartRendererRenderContext` reports the live `surface` and the
+stable interaction controller instead of assuming an SVG element.
+
+Use `mountChartRenderer` from `@tanstack/charts/renderer`, or the React and
+Octane `/core` entries, to mount a custom renderer. `RenderChartOptions`,
+`ChartSurfaceRenderOptions`, `ChartSurface`, `ChartRenderer`,
+`ChartRendererCapabilities`, `ChartRendererTooltipMotionCapability`,
+`ChartTooltipMotionController`, `ChartTooltipMotionSnapshot`,
+`ChartRendererRenderContext`, `ChartRendererHostCommonOptions`,
+`ChartRendererHostOptions`, and `ChartRendererHost` describe the complete
+boundary.
+
+Import `resolveChartRenderer` from `@tanstack/charts/renderer` when implementing
+a host outside the shared adapters. The function returns the effective renderer
+for prerendering or mounting a scene. It returns the default when every node
+uses that renderer. Otherwise it asks the first non-default
+`ChartLayerRenderer` to compose the ordered layers with the default renderer.
+The shared DOM host and `createChartRendererAdapter` perform this resolution
+automatically.
+
+SVG remains available as a renderer implementation:
+
+```ts
+import {
+  createSvgChartRenderer,
+  svgChartRenderer,
+} from '@tanstack/charts/svg/renderer'
+```
+
+```ts
+function createSvgChartRenderer<
+  TDatum = unknown,
+  TXValue extends ChartValue = ChartValue,
+  TYValue extends ChartValue = ChartValue,
+>(
+  renderSvg?: ChartSvgRenderer<TDatum, TXValue, TYValue>,
+): ChartRenderer<TDatum, TXValue, TYValue>
+
+const svgChartRenderer: ChartRenderer
+```
+
+`createSvgChartRenderer` adapts a `ChartSvgRenderer` into a `ChartRenderer`.
+Omitting the argument uses `renderChartSvg`. `svgChartRenderer` is the shared
+preconfigured instance for renderer-neutral hosts that want the built-in SVG
+surface.
+Pass a `ChartSvgRenderer` as `renderSvg` to the compatibility SVG host or
+default framework adapter when only SVG serialization needs to change. Such a
+renderer should preserve:
+
+- an SVG root discoverable by the host
+- stable `data-ts-key` identities for reconciliation
+- focus-filtered scene groups and data-less guides when chart-owned focus paint is
+  desired
+- the scene coordinate system and accessible name
+
+See [Custom extensions](./custom-extensions.md#custom-renderers) before
+replacing the shared renderer.

@@ -1,0 +1,20 @@
+import { isChartKey } from './scales.js';
+import type { Channel, ChannelAccessor, ChartKey, ChartMarkRenderer, ChartValue, InitializedMark, MarkInitialization, MarkInitializeContext, ChartMark, ChartMotionDefinition, ChartMarkState, ChartMarkStateStyle, VisualChannel } from './types.js';
+export { isChartKey };
+export declare function isChartValue(value: unknown): value is ChartValue;
+export declare function isFiniteNumber(value: unknown): value is number;
+export declare function isNonnegativeFiniteNumber(value: unknown): value is number;
+export declare function createMark<TDatum, TXValue extends ChartValue = ChartValue, TYValue extends ChartValue = ChartValue, TXScaleId extends string = 'x', TYScaleId extends string = 'y'>(initialize: (context: MarkInitializeContext) => MarkInitialization<TDatum, TXValue, TYValue>, motion?: ChartMotionDefinition<TDatum>, renderer?: ChartMarkRenderer): ChartMark<TDatum, TXValue, TYValue, TXValue, TYValue, TXScaleId, TYScaleId>;
+export declare function applyMarkRenderer<TDatum, TXValue extends ChartValue, TYValue extends ChartValue>(initialized: InitializedMark<TDatum, TXValue, TYValue>, renderer: ChartMarkRenderer): InitializedMark<TDatum, TXValue, TYValue>;
+export declare function applyMarkRendererToScene<TDatum, TXValue extends ChartValue, TYValue extends ChartValue>(scene: import('./types.js').MarkScene<TDatum, TXValue, TYValue>, renderer: ChartMarkRenderer): import('./types.js').MarkScene<TDatum, TXValue, TYValue>;
+export declare function normalizeMarkInitialization<TDatum, TXValue extends ChartValue, TYValue extends ChartValue>(initialized: MarkInitialization<TDatum, TXValue, TYValue>): InitializedMark<TDatum, TXValue, TYValue>;
+export declare function markStates<TDatum, TStyle extends ChartMarkStateStyle<TDatum>>(data: readonly TDatum[], definitions: readonly ChartMarkState<TDatum, TStyle>[] | undefined): InitializedMark['states'];
+export declare function visualValue<TDatum, TValue>(channel: VisualChannel<TDatum, TValue> | undefined, datum: TDatum, index: number, data: readonly TDatum[], fallback: TValue): TValue;
+export declare function channelValues<TDatum, TValue>(data: readonly TDatum[], channel: Channel<TDatum, TValue> | undefined, fallback: ChannelAccessor<TDatum, TValue>): TValue[];
+export declare function inferredKeyValues<TDatum>(data: readonly TDatum[], key: Channel<TDatum, ChartKey> | undefined, options?: {
+    groups?: readonly unknown[];
+    candidates?: readonly (readonly unknown[])[];
+    markId?: string;
+    warningIdentity?: object;
+}): ChartKey[];
+export declare function compositeKeyValues(...channels: readonly (readonly unknown[])[]): (ChartKey | undefined)[];

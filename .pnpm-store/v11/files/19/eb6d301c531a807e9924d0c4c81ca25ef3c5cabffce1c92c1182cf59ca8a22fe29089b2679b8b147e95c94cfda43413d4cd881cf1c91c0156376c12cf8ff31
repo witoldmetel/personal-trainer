@@ -1,0 +1,119 @@
+import { number, escapeText, escapeAttribute } from "./markup-internal.js";
+import {
+  svgRenderChildren
+} from "./svg-render-context-internal.js";
+import { rectCornerRadiiPath } from "./renderer-rect.js";
+function renderChartSvgWithHooks(scene, options, hooks) {
+  const idPrefix = options.idPrefix ?? "";
+  const className = options.className ? `ts-chart ${options.className}` : "ts-chart";
+  const description = options.ariaDescription ? `<desc>${escapeText(options.ariaDescription)}</desc>` : "";
+  const definitions = hooks?.renderDefinitions?.(scene, idPrefix) ?? "";
+  const direction = scene.direction === "ltr" || scene.direction === "rtl" ? ` direction="${scene.direction}"` : "";
+  const background = scene.theme.background === "transparent" ? "" : renderNode(
+    {
+      kind: "rect",
+      key: "background",
+      x: 0,
+      y: 0,
+      width: scene.width,
+      height: scene.height,
+      style: { fill: scene.theme.background }
+    },
+    hooks,
+    idPrefix
+  );
+  return `<svg class="${escapeAttribute(className)}" width="100%" height="100%" viewBox="0 0 ${number(scene.width)} ${number(scene.height)}" role="img" aria-roledescription="chart" aria-label="${escapeAttribute(options.ariaLabel)}" tabindex="${number(options.tabIndex ?? 0)}"${direction} style="display:block;overflow:visible">${description}${definitions}${background}${renderSceneNodes(scene.nodes, idPrefix, hooks, svgRenderChildren(options))}</svg>`;
+}
+function renderSceneNodes(nodes, idPrefix = "", hooks, children) {
+  let markup = "";
+  for (const node of nodes)
+    markup += renderNode(node, hooks, idPrefix, children);
+  return markup;
+}
+function renderFocusGuideLayer(nodes, placement, idPrefix = "", hooks) {
+  const visibility = nodes.length ? "visible" : "hidden";
+  return `<g data-ts-key="focus-guide-layer:${placement}" class="ts-chart__focus-guide-layer ts-chart__focus-guide-layer--${placement}" data-ts-focus-layer="${placement}" data-ts-focus-guide-layer="${placement}" aria-hidden="true" visibility="${visibility}">${renderSceneNodes(nodes, idPrefix, hooks ?? focusGuideRenderHooks)}</g>`;
+}
+const focusGuideRenderHooks = {
+  renderGroup: renderSvgClip
+};
+function renderNode(node, hooks, idPrefix, children) {
+  const common = renderCommon(node, hooks, idPrefix);
+  switch (node.kind) {
+    case "group": {
+      const transform = node.translateX === void 0 && node.translateY === void 0 ? "" : ` transform="translate(${number(node.translateX ?? 0)} ${number(node.translateY ?? 0)})"`;
+      const extension = hooks?.renderGroup?.(node, idPrefix);
+      const focus = node.focus ? ` data-ts-focus-layer="${node.focus.placement}"${node.focus.retarget ? ' data-ts-focus-retarget="true"' : ""} visibility="hidden"` : "";
+      return `<g${common}${transform}${focus}${extension?.attributes ?? ""}>${extension?.content ?? ""}${renderSceneNodes(children?.(node) ?? node.children, idPrefix, hooks, children)}</g>`;
+    }
+    case "rule":
+      return `<line${common} x1="${number(node.x1)}" y1="${number(node.y1)}" x2="${number(node.x2)}" y2="${number(node.y2)}"/>`;
+    case "polyline": {
+      const path = node.path ?? pointsPath(node.points, false);
+      return `<path${common} d="${escapeAttribute(path)}" vector-effect="non-scaling-stroke"/>`;
+    }
+    case "area": {
+      const path = node.polygons !== void 0 ? polygonsPath(node.polygons) : node.path ?? pointsPath(node.points, true);
+      const fillRule = node.polygons === void 0 ? "" : ' fill-rule="evenodd"';
+      return `<path${common} d="${escapeAttribute(path)}"${fillRule} vector-effect="non-scaling-stroke"/>`;
+    }
+    case "dot":
+      return `<circle${common} cx="${number(node.x)}" cy="${number(node.y)}" r="${number(node.radius)}"/>`;
+    case "rect":
+      return node.cornerRadii === void 0 ? `<rect${common} x="${number(node.x)}" y="${number(node.y)}" width="${number(node.width)}" height="${number(node.height)}"${node.radius === void 0 ? "" : ` rx="${number(node.radius)}"`}/>` : `<path${common} d="${rectCornerRadiiPath(node.x, node.y, node.width, node.height, node.cornerRadii)}"/>`;
+    case "label": {
+      const transform = node.rotate === void 0 ? "" : ` transform="rotate(${number(node.rotate)} ${number(node.x)} ${number(node.y)})"`;
+      const anchor = node.anchor ? ` text-anchor="${node.anchor}"` : "";
+      const baseline = node.baseline ? ` dominant-baseline="${node.baseline}"` : "";
+      const fontSize = node.fontSize === void 0 ? "" : ` font-size="${number(node.fontSize)}"`;
+      const fontWeight = node.fontWeight === void 0 ? "" : ` font-weight="${number(node.fontWeight)}"`;
+      return `<text${common} x="${number(node.x)}" y="${number(node.y)}"${anchor}${baseline}${transform}${fontSize}${fontWeight} font-family="inherit">${escapeText(node.text)}</text>`;
+    }
+  }
+}
+function polygonsPath(polygons) {
+  return polygons.flatMap((polygon) => polygon).filter((ring) => ring.length > 0).map((ring) => pointsPath(ring, true)).join("");
+}
+function pointsPath(points, close) {
+  return `${points.map(
+    ([x, y], index) => `${index === 0 ? "M" : "L"}${number(x)},${number(y)}`
+  ).join("")}${close ? "Z" : ""}`;
+}
+function renderSvgClip(node, idPrefix) {
+  if (!node.clip) return void 0;
+  const prefix = idPrefix.replaceAll(/[^a-zA-Z0-9_-]/g, "");
+  const id = `${prefix ? `${prefix}-` : ""}ts-chart-clip-${stableId(node.key)}`;
+  return {
+    attributes: ` clip-path="url(#${id})"`,
+    content: `<defs data-ts-key="${escapeAttribute(`${node.key}:clip-defs`)}"><clipPath id="${id}"><rect x="${number(node.clip.x)}" y="${number(node.clip.y)}" width="${number(node.clip.width)}" height="${number(node.clip.height)}"/></clipPath></defs>`
+  };
+}
+function stableId(value) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = Math.imul(hash ^ value.charCodeAt(index), 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+function renderCommon(node, hooks, idPrefix) {
+  const key = ` data-ts-key="${escapeAttribute(node.key)}"`;
+  const className = node.className ? ` class="${escapeAttribute(node.className)}"` : "";
+  const ariaHidden = node.ariaHidden ? ' aria-hidden="true"' : "";
+  return `${key}${className}${ariaHidden}${renderStyle(node.style, hooks, idPrefix)}`;
+}
+function renderStyle(style, hooks, idPrefix) {
+  if (!style) return "";
+  return renderAttribute("fill", paint(style.fill, hooks, idPrefix)) + renderAttribute("fill-opacity", style.fillOpacity) + renderAttribute("stroke", paint(style.stroke, hooks, idPrefix)) + renderAttribute("stroke-opacity", style.strokeOpacity) + renderAttribute("stroke-width", style.strokeWidth) + renderAttribute("opacity", style.opacity) + renderAttribute("stroke-linecap", style.lineCap) + renderAttribute("stroke-linejoin", style.lineJoin) + renderAttribute("stroke-dasharray", style.strokeDasharray);
+}
+function paint(value, hooks, idPrefix) {
+  return value && hooks?.resolvePaint ? hooks.resolvePaint(value, idPrefix) : value;
+}
+function renderAttribute(name, value) {
+  return value == null ? "" : ` ${name}="${typeof value === "number" ? number(value) : escapeAttribute(value)}"`;
+}
+export {
+  renderChartSvgWithHooks,
+  renderFocusGuideLayer,
+  renderSceneNodes,
+  renderSvgClip
+};

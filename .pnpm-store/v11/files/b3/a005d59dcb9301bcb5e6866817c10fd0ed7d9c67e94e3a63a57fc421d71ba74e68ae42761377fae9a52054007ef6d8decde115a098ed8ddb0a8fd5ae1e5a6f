@@ -1,0 +1,161 @@
+---
+title: Exporting
+description: Export accessible chart SVG or browser-rendered raster images while preserving dimensions, styling, and resource identity.
+---
+
+TanStack Charts' built-in export helpers have three paths:
+
+- render a `ChartScene` directly to an SVG string;
+- serialize an SVG that is already mounted in a browser;
+- rasterize a mounted SVG or Canvas chart.
+
+Choose based on whether export needs computed browser styles.
+
+## Render a scene to SVG
+
+`renderChartSvg` is deterministic and DOM-free:
+
+```ts
+import { createChartScene, renderChartSvg } from '@tanstack/charts'
+
+const scene = createChartScene(definition, {
+  width: 960,
+  height: 540,
+})
+
+const svg = renderChartSvg(scene, {
+  ariaLabel: 'Quarterly revenue',
+  ariaDescription: 'Revenue rose in three of four quarters.',
+  idPrefix: 'quarterly-revenue',
+})
+```
+
+This direct serializer paints the complete renderer-neutral scene as SVG. It
+does not run mark-level surface composition, so it can provide a vector
+snapshot of a definition that selects Canvas when mounted.
+
+For a responsive definition, create a runtime with its datum, x-value, and
+y-value generics, then call `render(...)` with the definition and explicit
+size. See [Runtime and Scene](../reference/runtime-and-scene.md#createchartruntime)
+and [SSR and Hydration](./ssr-and-hydration.md).
+
+Use explicit export dimensions. Responsive browser dimensions are a display
+policy, not a reproducible file size.
+
+## Serialize a mounted chart
+
+The export subpath copies a mounted chart and inlines presentation properties
+that depend on CSS:
+
+```ts
+import { downloadChartSvg, serializeChartSvg } from '@tanstack/charts/export'
+
+const serialized = serializeChartSvg(chartContainer, {
+  width: 1200,
+  height: 675,
+})
+
+downloadChartSvg(chartContainer, 'quarterly-revenue.svg', {
+  width: 1200,
+  height: 675,
+})
+```
+
+The target may be the chart SVG or an ancestor containing `svg.ts-chart`.
+Focus decoration is omitted by default; set `includeFocus: true` when it is
+part of the intended artifact. This includes authored `whenFocused` geometry,
+the primary focus ring, and the currently painted crosshair or controlled
+cursor guide.
+
+## Export PNG, JPEG, or WebP
+
+Raster export is browser-only and is isolated behind the same export subpath:
+
+```ts
+import { downloadChartImage, renderChartImage } from '@tanstack/charts/export'
+
+const blob = await renderChartImage(chartContainer, {
+  width: 1200,
+  height: 675,
+  scale: 2,
+  background: '#ffffff',
+  type: 'image/png',
+})
+
+await downloadChartImage(chartContainer, 'quarterly-revenue.png', {
+  scale: 2,
+  background: '#ffffff',
+})
+```
+
+`scale` controls raster density, not chart layout. A 1200 × 675 chart at scale
+2 produces a 2400 × 1350 canvas while retaining the 1200 × 675 visual
+coordinate system.
+
+JPEG and WebP encoding depend on browser support. A browser can return PNG
+when the requested encoder is unavailable. Check `blob.type` before choosing
+a file extension, the download helper keeps the filename you supply.
+
+## Export a Canvas chart
+
+Pass the Canvas root or an ancestor containing it to the same
+`renderChartImage` or `downloadChartImage` functions. Without focus, the
+exporter draws the stable base bitmap at the requested dimensions and scale.
+Set `includeFocus: true` to composite the live background, focus underlay,
+ordinary scene, and focus overlay layers in that order. Crosshair guides use
+the same underlay and overlay canvases.
+
+Canvas focus is painted on underlay and overlay canvases so pointer movement
+does not repaint the base scene. Applications that need only the raw base
+bitmap may also call `toBlob()` or `toDataURL()` on
+`CanvasChartSurface.canvas`; it contains the chart background and ordinary
+scene but no transient focus. `backgroundCanvas`, `focusUnderCanvas`,
+`sceneCanvas`, and `focusCanvas` expose the modeled live layers. Unlike
+SVG serialization, Canvas export does not retain vector geometry, accessible
+markup, or independently styleable nodes.
+
+## Export a mixed SVG and Canvas chart
+
+Pass the mixed chart root or its host to `renderChartImage` or
+`downloadChartImage`. The exporter composites every SVG and Canvas child
+surface in visual order. Set `includeFocus: true` to include the live focus
+layers in the same positions used by the mounted chart.
+
+`serializeChartSvg` and `downloadChartSvg` reject a mixed root. A mixed chart
+contains raster pixels, so a pure vector SVG would either omit those marks or
+embed a raster image. Use the raster export path when any mounted mark selects
+Canvas.
+
+## Theme and resource policy
+
+Export the theme intended for the artifact. A chart following application dark
+mode should usually receive an explicit light theme and background for a
+document or print workflow.
+
+Gradients and clips require stable resource IDs. Supply `idPrefix` when
+rendering multiple chart exports into the same document. If a custom SVG
+renderer is in use, it must preserve the scene's gradients, accessibility
+metadata, and scoped IDs.
+
+## Security and portability
+
+Chart text is escaped by the SVG renderer. Custom renderers and custom tooltip
+HTML remain application-owned.
+
+Before exporting a chart that references external images, fonts, or CSS,
+decide whether the consumer can reach those resources. Self-contained SVG
+needs embedded or inlined assets.
+
+## Export checklist
+
+- File dimensions are explicit.
+- The export theme and background are intentional.
+- The accessible name and description describe the exported state.
+- Resource IDs are scoped.
+- Fonts and external resources are portable.
+- Focus decoration is included only when meaningful.
+- Raster scale is chosen for the target medium.
+- A Canvas or mixed export intentionally includes or excludes focus layers.
+
+See [Rendering and Export](../reference/rendering-and-export.md) for every
+function and option.

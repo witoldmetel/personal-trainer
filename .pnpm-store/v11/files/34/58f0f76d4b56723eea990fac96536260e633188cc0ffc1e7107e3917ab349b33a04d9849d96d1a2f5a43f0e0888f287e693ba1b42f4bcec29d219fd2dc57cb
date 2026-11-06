@@ -1,0 +1,3 @@
+import type { ResponsiveChartDefinition, ChartDefinitionForTooltipHost, ChartRuntime, ChartRuntimeOptions, ChartValue } from './types.js';
+export declare function createChartRuntime<TDatum = unknown, TXValue extends ChartValue = ChartValue, TYValue extends ChartValue = ChartValue>(options?: ChartRuntimeOptions): ChartRuntime<TDatum, TXValue, TYValue>;
+export declare function isResponsiveChartDefinition<TDatum, TXValue extends ChartValue, TYValue extends ChartValue, TTooltipHost extends string>(definition: ChartDefinitionForTooltipHost<TDatum, TXValue, TYValue, TTooltipHost>): definition is Extract<ChartDefinitionForTooltipHost<TDatum, TXValue, TYValue, TTooltipHost>, ResponsiveChartDefinition<TDatum, TXValue, TYValue, TTooltipHost>>;

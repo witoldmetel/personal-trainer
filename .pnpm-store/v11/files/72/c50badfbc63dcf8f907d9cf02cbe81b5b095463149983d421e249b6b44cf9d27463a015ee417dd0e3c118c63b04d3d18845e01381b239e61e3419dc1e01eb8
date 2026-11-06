@@ -1,0 +1,354 @@
+import { focusGroupAngle } from './polar-focus-internal.js';
+import type { Arc, CurveFactory, CurveFactoryLineOnly } from 'd3-shape';
+import type { Channel, ChannelOutput, ChartAxisValue, ChartKey, ChartMark, ChartMarkRenderer, ChartMarkMotionOptions, ChartMarkState, ChartAreaStateStyle, ChartDotStateStyle, ChartLineStateStyle, ChartTextStateStyle, ChartMotionDefinition, ChartNumericScale, MarkScene, ChartTheme, ChartValue, ChartScaleInput, SceneNode, VisualChannel } from './types.js';
+import type { InitializedPolarMark as InternalInitializedPolarMark, PolarLayoutContext as InternalPolarLayoutContext, PolarMarkInitializeContext, PolarMarkRenderContext, PolarResolvedScale as InternalPolarResolvedScale } from './polar-mark-internal.js';
+export { pie } from './polar-pie.js';
+export { focusGroupAngle };
+export type { PieDatum, PieOptions } from './polar-pie.js';
+export type PolarPositionChannel = 'angle' | 'radius';
+export interface PolarResolvedScale<TValue extends ChartValue = ChartValue> extends InternalPolarResolvedScale<TValue> {
+    id: string;
+    channel: PolarPositionChannel;
+}
+export interface PolarLayoutContext extends InternalPolarLayoutContext {
+    scales: Readonly<Record<string, PolarResolvedScale>>;
+}
+interface InitializedPolarMark<TDatum = unknown, TAngle extends ChartValue = ChartValue, TRadius extends ChartValue = ChartValue> extends Omit<InternalInitializedPolarMark<TDatum, TAngle, TRadius>, 'render'> {
+    angleScale?: string;
+    radiusScale?: string;
+    render: (context: Omit<PolarMarkRenderContext, 'layout'> & {
+        layout: PolarLayoutContext;
+    }) => MarkScene<TDatum, TAngle, TRadius>;
+}
+export interface PolarMark<TDatum = unknown, TAngle extends ChartValue = ChartValue, TRadius extends ChartValue = ChartValue, TAngleScaleId extends string = 'angle', TRadiusScaleId extends string = 'radius'> {
+    initialize: (context: PolarMarkInitializeContext) => InitializedPolarMark<TDatum, TAngle, TRadius>;
+    motion?: ChartMotionDefinition<any>;
+    renderer?: ChartMarkRenderer;
+    readonly __datum?: TDatum;
+    readonly __angle?: TAngle;
+    readonly __radius?: TRadius;
+    readonly __angleScaleId?: TAngleScaleId;
+    readonly __radiusScaleId?: TRadiusScaleId;
+}
+export type PolarLength = number | ((context: PolarLayoutContext) => number);
+export interface PolarAngleOptions<TValue extends ChartValue = any> {
+    scale: ChartScaleInput<TValue>;
+    channel?: 'angle';
+    nice?: boolean | number;
+    /**
+     * Avoids placing the first and last points at the same angle for point
+     * scales. Defaults to true for a complete revolution and false for a
+     * partial angular range.
+     */
+    wrap?: boolean;
+}
+export interface PolarRadiusOptions<TValue extends ChartValue = any> {
+    scale: ChartScaleInput<TValue>;
+    channel?: 'radius';
+    nice?: boolean | number;
+    /** Responsive pixel range for the copied radius scale. Defaults to [0, radius]. */
+    range?: readonly [PolarLength, PolarLength];
+}
+export type PolarPositionScaleOptions<TValue extends ChartValue = any> = PolarAngleOptions<TValue> | PolarRadiusOptions<TValue>;
+interface PolarGuideRenderContext {
+    layout: PolarLayoutContext;
+    theme: ChartTheme;
+    guideIndex: number;
+    parentId: string;
+}
+export interface PolarGuide {
+    render: (context: PolarGuideRenderContext) => PolarGuideScene;
+}
+export interface PolarGuideScene {
+    background: readonly SceneNode[];
+    foreground?: readonly SceneNode[];
+}
+type AnyPolarMark = PolarMark<unknown, any, any, any, any>;
+type PolarMarkDatum<TMark> = TMark extends PolarMark<infer TDatum, any, any, any, any> ? TDatum : never;
+type PolarMarkAngle<TMark> = TMark extends PolarMark<any, infer TAngle, any, any, any> ? TAngle : never;
+type PolarMarkRadius<TMark> = TMark extends PolarMark<any, any, infer TRadius, any, any> ? TRadius : never;
+type PolarMarkScaleAngle<TMark> = TMark extends PolarMark<any, infer TAngle, any, infer TScaleId, any> ? 'angle' extends TScaleId ? TAngle : never : never;
+type PolarMarkScaleRadius<TMark> = TMark extends PolarMark<any, any, infer TRadius, any, infer TScaleId> ? 'radius' extends TScaleId ? TRadius : never : never;
+type PolarIsAny<TValue> = 0 extends 1 & TValue ? true : false;
+type PolarAngleScaleSpec<TMarks extends readonly AnyPolarMark[]> = PolarIsAny<PolarMarkScaleAngle<TMarks[number]>> extends true ? {
+    angle: PolarAngleOptions<ChartAxisValue<PolarMarkScaleAngle<TMarks[number]>>> | null;
+} : [PolarMarkScaleAngle<TMarks[number]>] extends [never] ? {
+    angle: null;
+} : {
+    angle: PolarAngleOptions<ChartAxisValue<PolarMarkScaleAngle<TMarks[number]>>>;
+};
+type PolarRadiusScaleSpec<TMarks extends readonly AnyPolarMark[]> = PolarIsAny<PolarMarkScaleRadius<TMarks[number]>> extends true ? {
+    radius: PolarRadiusOptions<ChartAxisValue<PolarMarkScaleRadius<TMarks[number]>>> | null;
+} : [PolarMarkScaleRadius<TMarks[number]>] extends [never] ? {
+    radius: null;
+} : {
+    radius: PolarRadiusOptions<ChartAxisValue<PolarMarkScaleRadius<TMarks[number]>>>;
+};
+export type PolarScales<TMarks extends readonly AnyPolarMark[] = readonly AnyPolarMark[]> = Readonly<Record<string, PolarPositionScaleOptions | null>> & PolarAngleScaleSpec<TMarks> & PolarRadiusScaleSpec<TMarks>;
+export interface PolarOptions<TMarks extends readonly AnyPolarMark[] = readonly AnyPolarMark[]> extends ChartMarkMotionOptions<PolarMarkDatum<TMarks[number]>> {
+    id?: string;
+    className?: string;
+    marks: TMarks;
+    /** Default focus states for child marks; an explicit child states array replaces them. */
+    states?: readonly ChartMarkState<PolarMarkDatum<TMarks[number]>>[];
+    guides?: readonly PolarGuide[];
+    scales: PolarScales<TMarks>;
+    startAngle?: number;
+    endAngle?: number;
+    /** Pixel inset applied before radiusRatio. */
+    inset?: number;
+    /** Multiplier applied to the final available radius. Defaults to 1. */
+    radiusRatio?: number;
+}
+export declare function polar<const TMarks extends readonly AnyPolarMark[]>(options: PolarOptions<TMarks>): ChartMark<PolarMarkDatum<TMarks[number]>, PolarMarkAngle<TMarks[number]>, PolarMarkRadius<TMarks[number]>, never, never>;
+export interface RadialArcOptions<TDatum> extends ChartMarkMotionOptions<TDatum> {
+    states?: readonly ChartMarkState<TDatum, ChartAreaStateStyle<TDatum>>[];
+    id?: string;
+    className?: string;
+    startAngle?: Channel<TDatum, number | null | undefined>;
+    endAngle?: Channel<TDatum, number | null | undefined>;
+    padAngle?: Channel<TDatum, number | null | undefined>;
+    key?: Channel<TDatum, ChartKey>;
+    z?: Channel<TDatum, ChartKey | null | undefined>;
+    color?: Channel<TDatum, ChartKey | null | undefined>;
+    innerRadius?: PolarLength;
+    outerRadius?: PolarLength;
+    cornerRadius?: PolarLength;
+    padRadius?: PolarLength;
+    /**
+     * Replaces the default D3 arc configuration for per-datum radii, sunbursts,
+     * and other advanced arc layouts. Keep its context null so it returns SVG
+     * path data.
+     */
+    generator?: (context: PolarLayoutContext) => Arc<any, TDatum>;
+    fill?: VisualChannel<TDatum, string>;
+    fillOpacity?: number;
+    stroke?: VisualChannel<TDatum, string>;
+    strokeOpacity?: number;
+    strokeWidth?: number;
+    strokeDasharray?: string;
+    opacity?: number;
+}
+export declare function radialArc<TDatum>(source: Iterable<TDatum>, options?: RadialArcOptions<NoInfer<TDatum>>): PolarMark<TDatum, number, number, never, never>;
+interface RadialBarBaseOptions<TDatum> extends ChartMarkMotionOptions<TDatum> {
+    states?: readonly ChartMarkState<TDatum, ChartAreaStateStyle<TDatum>>[];
+    id?: string;
+    className?: string;
+    /** Named angle scale. Omit to use the reserved `angle` scale. */
+    angleScale?: string;
+    /** Named radius scale. Omit to use the reserved `radius` scale. */
+    radiusScale?: string;
+    key?: Channel<TDatum, ChartKey>;
+    z?: Channel<TDatum, ChartKey | null | undefined>;
+    color?: Channel<TDatum, ChartKey | null | undefined>;
+    cornerRadius?: PolarLength | 'full';
+    fill?: VisualChannel<TDatum, string>;
+    fillOpacity?: number;
+    stroke?: VisualChannel<TDatum, string>;
+    strokeOpacity?: number;
+    strokeWidth?: number;
+    strokeDasharray?: string;
+    opacity?: number;
+}
+type InferredPolarChannelOutput<TDatum, TChannel> = [TChannel] extends [never] ? number : ChannelOutput<TDatum, TChannel, number>;
+type InferredPolarScaleId<TScaleId, TFallback extends string> = [
+    NonNullable<TScaleId>
+] extends [never] ? TFallback : Extract<NonNullable<TScaleId>, string>;
+export interface RadialBarRadiusOptions<TDatum> extends RadialBarBaseOptions<TDatum> {
+    angle?: Channel<TDatum, ChartValue | null | undefined>;
+    radius?: Channel<TDatum, number | null | undefined>;
+    radius1?: number | Channel<TDatum, number | null | undefined>;
+    radius2?: number | Channel<TDatum, number | null | undefined>;
+}
+type RadialBarRadiusCallOptions<TDatum, TAngle extends RadialBarRadiusOptions<TDatum>['angle'], TAngleScaleId extends string | undefined, TRadiusScaleId extends string | undefined> = Omit<RadialBarRadiusOptions<TDatum>, 'angle' | 'angleScale' | 'radiusScale'> & {
+    angle?: TAngle | NoInfer<RadialBarRadiusOptions<TDatum>['angle']>;
+    angleScale?: TAngleScaleId | NoInfer<string>;
+    radiusScale?: TRadiusScaleId | NoInfer<string>;
+};
+export declare function radialBarRadius<TDatum>(source: Iterable<TDatum>): PolarMark<TDatum, number, number>;
+export declare function radialBarRadius<TDatum, const TAngle extends RadialBarRadiusOptions<NoInfer<TDatum>>['angle'] = never, const TAngleScaleId extends string | undefined = undefined, const TRadiusScaleId extends string | undefined = undefined>(source: Iterable<TDatum>, options: RadialBarRadiusCallOptions<NoInfer<TDatum>, TAngle, TAngleScaleId, TRadiusScaleId> | undefined): PolarMark<TDatum, InferredPolarChannelOutput<TDatum, TAngle>, number, InferredPolarScaleId<TAngleScaleId, 'angle'>, InferredPolarScaleId<TRadiusScaleId, 'radius'>>;
+export interface RadialBarAngleOptions<TDatum> extends RadialBarBaseOptions<TDatum> {
+    angle?: Channel<TDatum, number | null | undefined>;
+    angle1?: number | Channel<TDatum, number | null | undefined>;
+    angle2?: number | Channel<TDatum, number | null | undefined>;
+    radius?: Channel<TDatum, ChartValue | null | undefined>;
+}
+type RadialBarAngleCallOptions<TDatum, TRadius extends RadialBarAngleOptions<TDatum>['radius'], TAngleScaleId extends string | undefined, TRadiusScaleId extends string | undefined> = Omit<RadialBarAngleOptions<TDatum>, 'radius' | 'angleScale' | 'radiusScale'> & {
+    radius?: TRadius | NoInfer<RadialBarAngleOptions<TDatum>['radius']>;
+    angleScale?: TAngleScaleId | NoInfer<string>;
+    radiusScale?: TRadiusScaleId | NoInfer<string>;
+};
+export declare function radialBarAngle<TDatum>(source: Iterable<TDatum>): PolarMark<TDatum, number, number>;
+export declare function radialBarAngle<TDatum, const TRadius extends RadialBarAngleOptions<NoInfer<TDatum>>['radius'] = never, const TAngleScaleId extends string | undefined = undefined, const TRadiusScaleId extends string | undefined = undefined>(source: Iterable<TDatum>, options: RadialBarAngleCallOptions<NoInfer<TDatum>, TRadius, TAngleScaleId, TRadiusScaleId> | undefined): PolarMark<TDatum, number, InferredPolarChannelOutput<TDatum, TRadius>, InferredPolarScaleId<TAngleScaleId, 'angle'>, InferredPolarScaleId<TRadiusScaleId, 'radius'>>;
+interface RadialPathOptions<TDatum> extends ChartMarkMotionOptions<TDatum> {
+    id?: string;
+    className?: string;
+    /** Named angle scale. Omit to use the reserved `angle` scale. */
+    angleScale?: string;
+    /** Named radius scale. Omit to use the reserved `radius` scale. */
+    radiusScale?: string;
+    angle?: number | Channel<TDatum, ChartValue | null | undefined>;
+    radius?: number | Channel<TDatum, number | null | undefined>;
+    key?: Channel<TDatum, ChartKey>;
+    z?: Channel<TDatum, ChartKey | null | undefined>;
+    color?: Channel<TDatum, ChartKey | null | undefined>;
+}
+export interface RadialLineOptions<TDatum> extends RadialPathOptions<TDatum> {
+    states?: readonly ChartMarkState<TDatum, ChartLineStateStyle<TDatum>>[];
+    curve?: CurveFactory | CurveFactoryLineOnly;
+    stroke?: VisualChannel<TDatum, string>;
+    strokeOpacity?: number;
+    strokeWidth?: number;
+    strokeDasharray?: string;
+    opacity?: number;
+    points?: boolean;
+}
+type RadialLineCallOptions<TDatum, TAngle extends RadialLineOptions<TDatum>['angle'], TRadius extends RadialLineOptions<TDatum>['radius'], TAngleScaleId extends string | undefined, TRadiusScaleId extends string | undefined> = Omit<RadialLineOptions<TDatum>, 'angle' | 'radius' | 'angleScale' | 'radiusScale'> & {
+    angle?: TAngle | NoInfer<RadialLineOptions<TDatum>['angle']>;
+    radius?: TRadius | NoInfer<RadialLineOptions<TDatum>['radius']>;
+    angleScale?: TAngleScaleId | NoInfer<string>;
+    radiusScale?: TRadiusScaleId | NoInfer<string>;
+};
+export declare function radialLine<TDatum>(source: Iterable<TDatum>): PolarMark<TDatum, number, number>;
+export declare function radialLine<TDatum, const TAngle extends RadialLineOptions<NoInfer<TDatum>>['angle'] = never, const TRadius extends RadialLineOptions<NoInfer<TDatum>>['radius'] = never, const TAngleScaleId extends string | undefined = undefined, const TRadiusScaleId extends string | undefined = undefined>(source: Iterable<TDatum>, options: RadialLineCallOptions<NoInfer<TDatum>, TAngle, TRadius, TAngleScaleId, TRadiusScaleId> | undefined): PolarMark<TDatum, InferredPolarChannelOutput<TDatum, TAngle>, InferredPolarChannelOutput<TDatum, TRadius>, InferredPolarScaleId<TAngleScaleId, 'angle'>, InferredPolarScaleId<TRadiusScaleId, 'radius'>>;
+export interface RadialAreaOptions<TDatum> extends RadialPathOptions<TDatum> {
+    states?: readonly ChartMarkState<TDatum, ChartAreaStateStyle<TDatum>>[];
+    radius1?: number | Channel<TDatum, number | null | undefined>;
+    curve?: CurveFactory;
+    fill?: VisualChannel<TDatum, string>;
+    fillOpacity?: number;
+    stroke?: VisualChannel<TDatum, string>;
+    strokeOpacity?: number;
+    strokeWidth?: number;
+    strokeDasharray?: string;
+    opacity?: number;
+}
+type RadialAreaCallOptions<TDatum, TAngle extends RadialAreaOptions<TDatum>['angle'], TRadius extends RadialAreaOptions<TDatum>['radius'], TAngleScaleId extends string | undefined, TRadiusScaleId extends string | undefined> = Omit<RadialAreaOptions<TDatum>, 'angle' | 'radius' | 'angleScale' | 'radiusScale'> & {
+    angle?: TAngle | NoInfer<RadialAreaOptions<TDatum>['angle']>;
+    radius?: TRadius | NoInfer<RadialAreaOptions<TDatum>['radius']>;
+    angleScale?: TAngleScaleId | NoInfer<string>;
+    radiusScale?: TRadiusScaleId | NoInfer<string>;
+};
+export declare function radialArea<TDatum>(source: Iterable<TDatum>): PolarMark<TDatum, number, number>;
+export declare function radialArea<TDatum, const TAngle extends RadialAreaOptions<NoInfer<TDatum>>['angle'] = never, const TRadius extends RadialAreaOptions<NoInfer<TDatum>>['radius'] = never, const TAngleScaleId extends string | undefined = undefined, const TRadiusScaleId extends string | undefined = undefined>(source: Iterable<TDatum>, options: RadialAreaCallOptions<NoInfer<TDatum>, TAngle, TRadius, TAngleScaleId, TRadiusScaleId> | undefined): PolarMark<TDatum, InferredPolarChannelOutput<TDatum, TAngle>, InferredPolarChannelOutput<TDatum, TRadius>, InferredPolarScaleId<TAngleScaleId, 'angle'>, InferredPolarScaleId<TRadiusScaleId, 'radius'>>;
+export interface RadialDotOptions<TDatum> extends RadialPathOptions<TDatum> {
+    states?: readonly ChartMarkState<TDatum, ChartDotStateStyle<TDatum>>[];
+    r?: number | Channel<TDatum, number | null | undefined>;
+    rScale?: ChartNumericScale;
+    fill?: VisualChannel<TDatum, string>;
+    fillOpacity?: number;
+    stroke?: string;
+    strokeOpacity?: number;
+    strokeWidth?: number;
+    opacity?: number;
+}
+export interface RadialTextOptions<TDatum> extends RadialPathOptions<TDatum> {
+    states?: readonly ChartMarkState<TDatum, ChartTextStateStyle<TDatum>>[];
+    text?: Channel<TDatum, string | number | null | undefined>;
+    fill?: VisualChannel<TDatum, string>;
+    fontSize?: number;
+    fontWeight?: number;
+    anchor?: VisualChannel<TDatum, 'start' | 'middle' | 'end' | 'outside'>;
+    baseline?: VisualChannel<TDatum, 'auto' | 'middle' | 'hanging'>;
+    rotate?: VisualChannel<TDatum, number>;
+    /** Signed pixel offset applied after the semantic radius is mapped. */
+    radiusOffset?: VisualChannel<TDatum, number>;
+    dx?: VisualChannel<TDatum, number>;
+    dy?: VisualChannel<TDatum, number>;
+}
+type RadialTextCallOptions<TDatum, TAngle extends RadialTextOptions<TDatum>['angle'], TRadius extends RadialTextOptions<TDatum>['radius'], TAngleScaleId extends string | undefined, TRadiusScaleId extends string | undefined> = Omit<RadialTextOptions<TDatum>, 'angle' | 'radius' | 'angleScale' | 'radiusScale'> & {
+    angle?: TAngle | NoInfer<RadialTextOptions<TDatum>['angle']>;
+    radius?: TRadius | NoInfer<RadialTextOptions<TDatum>['radius']>;
+    angleScale?: TAngleScaleId | NoInfer<string>;
+    radiusScale?: TRadiusScaleId | NoInfer<string>;
+};
+export declare function radialText<TDatum>(source: Iterable<TDatum>): PolarMark<TDatum, number, number>;
+export declare function radialText<TDatum, const TAngle extends RadialTextOptions<NoInfer<TDatum>>['angle'] = never, const TRadius extends RadialTextOptions<NoInfer<TDatum>>['radius'] = never, const TAngleScaleId extends string | undefined = undefined, const TRadiusScaleId extends string | undefined = undefined>(source: Iterable<TDatum>, options: RadialTextCallOptions<NoInfer<TDatum>, TAngle, TRadius, TAngleScaleId, TRadiusScaleId> | undefined): PolarMark<TDatum, InferredPolarChannelOutput<TDatum, TAngle>, InferredPolarChannelOutput<TDatum, TRadius>, InferredPolarScaleId<TAngleScaleId, 'angle'>, InferredPolarScaleId<TRadiusScaleId, 'radius'>>;
+export interface RadialRuleOptions<TDatum> extends ChartMarkMotionOptions<never> {
+    id?: string;
+    className?: string;
+    /** Named angle scale. Omit to use the reserved `angle` scale. */
+    angleScale?: string;
+    /** Named radius scale. Omit to use the reserved `radius` scale. */
+    radiusScale?: string;
+    angle?: number | Channel<TDatum, ChartValue | null | undefined>;
+    radius1?: number | Channel<TDatum, number | null | undefined>;
+    radius2?: number | Channel<TDatum, number | null | undefined>;
+    /** Signed pixel offset applied after radius1 is mapped. */
+    radius1Offset?: VisualChannel<TDatum, number>;
+    /** Signed pixel offset applied after radius2 is mapped. */
+    radius2Offset?: VisualChannel<TDatum, number>;
+    key?: Channel<TDatum, ChartKey>;
+    z?: Channel<TDatum, ChartKey | null | undefined>;
+    color?: Channel<TDatum, ChartKey | null | undefined>;
+    stroke?: VisualChannel<TDatum, string>;
+    strokeOpacity?: number;
+    strokeWidth?: number;
+    strokeDasharray?: string;
+    opacity?: number;
+}
+type RadialRuleCallOptions<TDatum, TAngle extends RadialRuleOptions<TDatum>['angle'], TAngleScaleId extends string | undefined, TRadiusScaleId extends string | undefined> = Omit<RadialRuleOptions<TDatum>, 'angle' | 'angleScale' | 'radiusScale'> & {
+    angle?: TAngle | NoInfer<RadialRuleOptions<TDatum>['angle']>;
+    angleScale?: TAngleScaleId | NoInfer<string>;
+    radiusScale?: TRadiusScaleId | NoInfer<string>;
+};
+export declare function radialRule<TDatum>(source: Iterable<TDatum>): PolarMark<never, number, number>;
+export declare function radialRule<TDatum, const TAngle extends RadialRuleOptions<NoInfer<TDatum>>['angle'] = never, const TAngleScaleId extends string | undefined = undefined, const TRadiusScaleId extends string | undefined = undefined>(source: Iterable<TDatum>, options: RadialRuleCallOptions<NoInfer<TDatum>, TAngle, TAngleScaleId, TRadiusScaleId> | undefined): PolarMark<never, InferredPolarChannelOutput<TDatum, TAngle>, number, InferredPolarScaleId<TAngleScaleId, 'angle'>, InferredPolarScaleId<TRadiusScaleId, 'radius'>>;
+type RadialDotCallOptions<TDatum, TAngle extends RadialDotOptions<TDatum>['angle'], TRadius extends RadialDotOptions<TDatum>['radius'], TAngleScaleId extends string | undefined, TRadiusScaleId extends string | undefined> = Omit<RadialDotOptions<TDatum>, 'angle' | 'radius' | 'angleScale' | 'radiusScale'> & {
+    angle?: TAngle | NoInfer<RadialDotOptions<TDatum>['angle']>;
+    radius?: TRadius | NoInfer<RadialDotOptions<TDatum>['radius']>;
+    angleScale?: TAngleScaleId | NoInfer<string>;
+    radiusScale?: TRadiusScaleId | NoInfer<string>;
+};
+export declare function radialDot<TDatum>(source: Iterable<TDatum>): PolarMark<TDatum, number, number>;
+export declare function radialDot<TDatum, const TAngle extends RadialDotOptions<NoInfer<TDatum>>['angle'] = never, const TRadius extends RadialDotOptions<NoInfer<TDatum>>['radius'] = never, const TAngleScaleId extends string | undefined = undefined, const TRadiusScaleId extends string | undefined = undefined>(source: Iterable<TDatum>, options: RadialDotCallOptions<NoInfer<TDatum>, TAngle, TRadius, TAngleScaleId, TRadiusScaleId> | undefined): PolarMark<TDatum, InferredPolarChannelOutput<TDatum, TAngle>, InferredPolarChannelOutput<TDatum, TRadius>, InferredPolarScaleId<TAngleScaleId, 'angle'>, InferredPolarScaleId<TRadiusScaleId, 'radius'>>;
+export interface PolarGuideLabelContext {
+    value: ChartValue;
+    index: number;
+    angle: number;
+    radius: number;
+    x: number;
+    y: number;
+    layout: PolarLayoutContext;
+}
+export type PolarGuideLabelOption<TValue> = TValue | ((context: PolarGuideLabelContext) => TValue);
+interface PolarGuideStyle {
+    id?: string;
+    className?: string;
+    labelClassName?: string;
+    stroke?: string;
+    strokeOpacity?: number;
+    strokeWidth?: number;
+    strokeDasharray?: string;
+    fill?: string;
+    fillOpacity?: number;
+    labels?: boolean;
+    labelFill?: string;
+    labelFontSize?: number;
+    labelAnchor?: PolarGuideLabelOption<'start' | 'middle' | 'end'>;
+    labelBaseline?: PolarGuideLabelOption<'auto' | 'middle' | 'hanging'>;
+    labelDx?: PolarGuideLabelOption<number>;
+    labelDy?: PolarGuideLabelOption<number>;
+    labelRotate?: PolarGuideLabelOption<number>;
+}
+export interface RadialGridOptions extends PolarGuideStyle {
+    /** Named radius scale. Omit to use the reserved `radius` scale. */
+    scale?: string;
+    /** Angle scale used for polygon rings. Omit to use reserved `angle`. */
+    angleScale?: string;
+    values?: readonly ChartValue[];
+    ticks?: number;
+    shape?: 'circle' | 'polygon';
+    format?: (value: ChartValue) => string;
+    labelAngle?: number;
+    labelOffset?: number;
+}
+export declare function radialGrid(options?: RadialGridOptions): PolarGuide;
+export interface AngleGridOptions extends PolarGuideStyle {
+    /** Named angle scale. Omit to use the reserved `angle` scale. */
+    scale?: string;
+    values?: readonly ChartValue[];
+    format?: (value: ChartValue) => string;
+    labelOffset?: number;
+}
+export declare function angleGrid(options?: AngleGridOptions): PolarGuide;

@@ -1,0 +1,42 @@
+import type { ControlledSignal } from './interaction-signal.js';
+import type { ChartControl, ChartValue, SceneStyle } from './types.js';
+export interface BrushRange<TValue extends ChartValue> {
+    readonly start: TValue;
+    readonly end: TValue;
+}
+export type BrushXSource = 'pointer' | 'keyboard';
+export type BrushXTarget = 'selection' | 'start' | 'end' | 'new';
+export type BrushXChange<TValue extends ChartValue> = BrushXChangeEvent<TValue, 'preview', 'pointer'> | BrushXChangeEvent<TValue, 'commit', BrushXSource> | BrushXChangeEvent<TValue, 'cancel', BrushXSource>;
+interface BrushXChangeEvent<TValue extends ChartValue, TType extends 'preview' | 'commit' | 'cancel', TSource extends BrushXSource> {
+    readonly type: TType;
+    readonly value: BrushRange<TValue>;
+    readonly origin: BrushRange<TValue>;
+    readonly source: TSource;
+    readonly target: BrushXTarget;
+}
+export interface BrushXFormatContext {
+    /** The handle whose value is being formatted. */
+    readonly handle: 'start' | 'end';
+}
+interface BrushXBaseOptions<TValue extends ChartValue> {
+    id?: string;
+    range: ControlledSignal<BrushRange<TValue>, BrushXChange<TValue>>;
+    ariaLabel?: string;
+    startAriaLabel?: string;
+    endAriaLabel?: string;
+    format?: (value: TValue, context: BrushXFormatContext) => string;
+    handleSize?: number;
+    selectionStyle?: SceneStyle;
+    handleStyle?: SceneStyle;
+}
+export interface BrushXValuesOptions<TValue extends ChartValue> extends BrushXBaseOptions<TValue> {
+    values: readonly TValue[];
+    keyboard?: boolean;
+}
+export interface BrushXContinuousOptions<TValue extends number | Date> extends BrushXBaseOptions<TValue> {
+    values?: never;
+    keyboard: false;
+}
+export declare function brushX<TValue extends ChartValue>(options: BrushXValuesOptions<TValue>): ChartControl<TValue, any>;
+export declare function brushX<TValue extends number | Date>(options: BrushXContinuousOptions<TValue>): ChartControl<TValue, any>;
+export {};

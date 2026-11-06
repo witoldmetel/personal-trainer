@@ -1,0 +1,4 @@
+import type { ChartRenderer } from './dom-types.js';
+import type { ChartValue } from './types.js';
+/** Compose ordered mark surfaces, reusing the compositor for each default renderer. */
+export declare function composeChartLayers<TDatum = unknown, TXValue extends ChartValue = ChartValue, TYValue extends ChartValue = ChartValue>(defaultRenderer: ChartRenderer<TDatum, TXValue, TYValue>): ChartRenderer<TDatum, TXValue, TYValue>;

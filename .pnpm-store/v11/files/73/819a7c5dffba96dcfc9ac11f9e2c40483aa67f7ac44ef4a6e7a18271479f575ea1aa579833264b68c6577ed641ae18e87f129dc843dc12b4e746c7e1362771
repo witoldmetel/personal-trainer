@@ -1,0 +1,17 @@
+export interface UtcScale {
+    (value: Date | number | null | undefined): number | undefined;
+    domain(): [Date, Date];
+    domain(values: Iterable<Date | number>): UtcScale;
+    range(): [number, number];
+    range(values: Iterable<number>): UtcScale;
+    invert(value: number): Date;
+    clamp(): boolean;
+    clamp(value: boolean): UtcScale;
+    ticks(count?: number): Date[];
+    tickFormat(count?: number): (value: Date) => string;
+    nice(count?: number): UtcScale;
+    copy(): UtcScale;
+}
+export declare function scaleUtc(): UtcScale;
+export declare function scaleUtc(range: Iterable<number>): UtcScale;
+export declare function scaleUtc(domain: Iterable<Date | number>, range: Iterable<number>): UtcScale;

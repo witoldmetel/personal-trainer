@@ -1,0 +1,28 @@
+import { resolveDotLayout } from './dot-layout.js';
+import type { DotLayout } from './dot-layout.js';
+import type { ChartValue } from './types.js';
+export type { DotLayout, DotLayoutResolveContext } from './dot-layout.js';
+export interface CreateDotLayoutOptions<TAxis extends 'x' | 'y', TAnchor extends ChartValue> {
+    readonly axis: TAxis;
+    readonly anchor: TAnchor;
+    readonly resolve: DotLayout<TAxis, TAnchor>[typeof resolveDotLayout];
+}
+export type DodgeXAnchor = 'left' | 'middle' | 'right';
+export type DodgeYAnchor = 'top' | 'middle' | 'bottom';
+export interface DodgeOptions<TAnchor extends string> {
+    anchor?: TAnchor;
+    /** Empty pixels between neighboring circle edges. Defaults to 1. */
+    padding?: number;
+    /** Compress overflowing offsets into the plot. Compression can overlap dots. */
+    fit?: 'overflow' | 'compress';
+}
+export type DodgeXOptions<TAnchor extends DodgeXAnchor = DodgeXAnchor> = DodgeOptions<TAnchor>;
+export type DodgeYOptions<TAnchor extends DodgeYAnchor = DodgeYAnchor> = DodgeOptions<TAnchor>;
+export type DodgeXLayout<TAnchor extends DodgeXAnchor = DodgeXAnchor> = DotLayout<'x', TAnchor>;
+export type DodgeYLayout<TAnchor extends DodgeYAnchor = DodgeYAnchor> = DotLayout<'y', TAnchor>;
+/** Creates a responsive final-pixel layout for one derived dot coordinate. */
+export declare function createDotLayout<const TAxis extends 'x' | 'y', const TAnchor extends ChartValue>(options: CreateDotLayoutOptions<TAxis, TAnchor>): DotLayout<TAxis, TAnchor>;
+/** Derives collision-free pixel x positions while preserving scaled y. */
+export declare function dodgeX<const TAnchor extends DodgeXAnchor = 'left'>(options?: DodgeXOptions<TAnchor>): DodgeXLayout<TAnchor>;
+/** Derives collision-free pixel y positions while preserving scaled x. */
+export declare function dodgeY<const TAnchor extends DodgeYAnchor = 'bottom'>(options?: DodgeYOptions<TAnchor>): DodgeYLayout<TAnchor>;

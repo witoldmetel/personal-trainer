@@ -1,0 +1,14 @@
+import type { UniversalChartRenderer } from './dom-types.js';
+import type { ChartAnimationOptions } from './types.js';
+export interface ChartMotionLiteOptions {
+    /** Fade the whole chart on its first client paint. Adopted SVG does not fade. */
+    initial?: boolean;
+    /** Duration in milliseconds for entrance and keyed SVG updates. Default: 240. */
+    duration?: number;
+    easing?: Extract<ChartAnimationOptions['easing'], string>;
+    respectReducedMotion?: boolean;
+    /** Animate size changes. Default: false. */
+    resize?: boolean;
+}
+/** Whole-chart entrance and keyed SVG tweens, without the full motion engine. */
+export declare function motionLite(options?: ChartMotionLiteOptions): UniversalChartRenderer;

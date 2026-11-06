@@ -1,0 +1,201 @@
+---
+title: SSR and Hydration
+description: Render deterministic chart markup on the server, preserve runtime work through hydration, and handle responsive dimensions without mismatches.
+---
+
+TanStack Charts builds a platform-neutral scene before the selected renderer
+produces output. React, Preact, Vue, Solid, Svelte, Angular, and Octane use the same
+runtime and renderer on the server and in the browser.
+
+## Adapter support
+
+| Adapter                                    | Server output                       | Browser contract                                    |
+| ------------------------------------------ | ----------------------------------- | --------------------------------------------------- |
+| [React](../framework/react/adapter.md)     | SVG, Canvas, or mixed shell         | Hydrates and adopts the existing surface            |
+| [Preact](../framework/preact/adapter.md)   | SVG or mixed shell                  | Hydrates before the shared host mounts              |
+| [Vue](../framework/vue/adapter.md)         | SVG or mixed shell                  | Hydrates before the shared host mounts              |
+| [Solid](../framework/solid/adapter.md)     | SVG or mixed shell                  | Hydrates before the shared host mounts              |
+| [Svelte](../framework/svelte/adapter.md)   | SVG or mixed shell                  | Hydrates before the shared host mounts              |
+| [Octane](../framework/octane/adapter.md)   | SVG, Canvas, or mixed shell         | Hydrates and adopts the existing surface            |
+| [Angular](../framework/angular/adapter.md) | SVG                                 | Hydrates and adopts the existing surface            |
+| [Lit](../framework/lit/adapter.md)         | Not yet a verified adapter contract | Browser registration, update, disconnect, reconnect |
+| [Alpine](../framework/alpine/adapter.md)   | None                                | Browser-only directive                              |
+
+For adapters with server output, the browser must render the same definition,
+dimensions, formatters, and component tree. Angular uses
+`provideClientHydration`; see its adapter page for the verified version scope.
+Lit may run inside applications with their own server infrastructure, but this
+library does not yet promise or test adapter hydration for Lit.
+
+## Give the server a real size
+
+The server cannot measure a container. Supply one of these policies:
+
+- `width` and `height` for a fixed-size chart;
+- `width` and `aspectRatio` for a fixed-width proportional chart;
+- `initialWidth` and `height` for a responsive chart;
+- `initialWidth` and `aspectRatio` when height should follow width.
+
+When CSS owns height and neither height option is present, server output uses
+the `320` fallback. The browser adopts the positive measured container content
+height after mounting. Supply `height` when exact server height matters.
+
+```tsx
+<Chart
+  definition={trafficChart}
+  ariaLabel="Daily traffic"
+  initialWidth={720}
+  aspectRatio={16 / 9}
+/>
+```
+
+The adapter uses an explicit `width` before `initialWidth` when deriving the
+server height. After mounting, a responsive host observes the container and
+renders at its measured content width and any CSS-owned height. Pick an
+`initialWidth` close to the layout's common size to minimize the first
+responsive adjustment.
+
+See [Responsive Charts](./responsive-charts.md) for the complete size policy.
+
+## Keep output deterministic
+
+Server and first-client output must agree for the same definition, size, and
+options. In particular:
+
+- keep fixed definitions at module scope and recreate captured-data definitions
+  from the same resolved data;
+- sort unordered collections before creating marks;
+- do not read `window`, layout, time, locale, or random values while building a
+  definition;
+- pass locale-sensitive formatters explicitly;
+- rely on inferred IDs or unique positions, and supply explicit keys when the
+  data has no stable identity;
+- provide `idPrefix` when multiple render roots need coordinated resource IDs.
+
+Responsive chart functions are synchronous. Fetch and transform data in the
+application's server/data layer, then capture the resolved data in the
+definition.
+
+## Hydration ownership
+
+Server and browser executions create separate runtime instances. Within the
+browser adapter's own initial render and layout-effect mount, the DOM host
+receives the already created browser runtime.
+
+Do not conditionally replace a chart with a different component only because
+the code is executing on the server. That creates a different tree and gives
+up the shared render path.
+
+## Client-only React charts
+
+To skip chart compilation and SVG output on the server, let the application
+mount the chart after hydration. Reserve its space with an ordinary wrapper:
+
+```tsx
+'use client'
+
+import { useEffect, useState, type ReactNode } from 'react'
+
+export function ClientOnlyChart({ children }: { children: ReactNode }) {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+
+  return (
+    <div style={{ width: '100%', height: 260 }}>
+      {mounted ? children : null}
+    </div>
+  )
+}
+```
+
+Wrap a `<Chart height={260} ... />` in this component. The server and first
+browser render both contain the empty wrapper, then the effect mounts the
+chart. Match the wrapper height to the chart, or give both the same aspect
+ratio. The wrapper is application-owned, there is no `prerender` prop on
+`Chart`.
+
+This skips the child's rendering, not work done by its parent to prepare data
+or construct definitions. Put browser-only setup inside the mounted child.
+In Next.js, keep this wrapper and chart definitions within a client component
+as described in the [React adapter](../framework/react/adapter.md#nextjs-app-router).
+
+Do not switch based on `typeof window` during render, the server and first
+browser trees would differ. This pattern also gives up visible chart geometry
+before JavaScript loads, so keep normal SVG SSR when that matters.
+
+## Canvas server shell
+
+`@tanstack/charts/react/canvas` and `@tanstack/charts/octane/canvas` render a
+deterministic accessible shell on the server: a named chart root and five
+`aria-hidden` canvas elements with the initial scene dimensions. The hidden
+stable base bitmap preserves the raw `canvas` surface, while four live layers
+model background, focus underlay, ordinary scene, and focus overlay paint. No
+server Canvas API or pixel painting is required.
+
+The client renders the same shell, adopts its existing root and canvases, sizes
+their backing stores for the device-pixel ratio, paints the scene, and attaches
+the shared interaction host. The first image appears after client mount; use
+the default SVG adapter when visible server-rendered geometry is required.
+
+When selected marks use `canvasChartRenderer`, verified server adapters emit
+one accessible mixed root with ordered SVG markup and Canvas shells. The
+browser adopts each child surface. SVG marks remain visible in the server
+response, while Canvas marks receive pixels after mount.
+
+## Fonts and text measurement
+
+Automatic guide margins depend on text metrics. The server uses deterministic
+fallback measurement unless you provide `measureText`. The browser host
+remeasures when fonts become available and schedules a new layout.
+
+`ChartTextMeasurer` is deliberately synchronous. Its options include the
+resolved family, style, stretch, letter spacing, direction, locale, and font
+scale so server and native implementations can use the same typography
+contract. Hosts own asynchronous font readiness and request another render
+after their available metrics change.
+
+For strict pixel parity:
+
+1. Use a font available in both environments.
+2. Supply a deterministic `ChartTextMeasurer`.
+3. Supply the same `ChartTextTypography`, including locale and font scale, in
+   both environments.
+
+Most applications should allow the browser's post-font layout correction
+instead of shipping a font engine to the server.
+
+## Render without a framework
+
+`createChartRuntime` and `renderChartSvg` form the server boundary:
+
+```ts
+import { createChartRuntime, renderChartSvg } from '@tanstack/charts'
+
+const runtime = createChartRuntime<TrafficRow, Date, number>()
+const scene = runtime.render(definition, { width: 720, height: 400 })
+
+const svg = renderChartSvg(scene, {
+  ariaLabel: 'Daily traffic',
+  idPrefix: 'traffic',
+})
+
+runtime.destroy()
+```
+
+`renderChartSvg` returns a string and does not require a DOM. A custom
+`ChartRenderer.prerender` may produce another deterministic shell. Browser-only
+focus, tooltip, reconciliation or paint, animation, and export begin when its
+surface mounts.
+
+## Hydration checklist
+
+- Server data is fully resolved before chart rendering.
+- Initial dimensions are explicit and representative.
+- Definition, transformed data, and formatting are deterministic.
+- Keys and `idPrefix` are stable.
+- The same adapter and definition render on both sides.
+- Browser-only work lives in host callbacks or application effects.
+- Font-driven relayout is expected or a text measurer is supplied.
+
+See the selected framework adapter page and
+[Runtime and Scene](../reference/runtime-and-scene.md) for the exact contracts.

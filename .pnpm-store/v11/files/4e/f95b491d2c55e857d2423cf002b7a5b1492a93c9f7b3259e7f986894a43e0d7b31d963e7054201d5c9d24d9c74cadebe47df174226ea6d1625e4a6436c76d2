@@ -1,0 +1,22 @@
+import type { ChartColorLegend, ChartKey, ChartLegendPlacement } from './types.js';
+import type { ControlledSignal } from './interaction-signal.js';
+export interface InteractiveColorLegendChange<TValue extends ChartKey> {
+    type: 'toggle';
+    value: TValue;
+    visible: boolean;
+}
+export interface InteractiveColorLegendItemContext {
+    readonly visible: boolean;
+}
+export interface InteractiveColorLegendOptions<TValue extends ChartKey> {
+    /** Emphasizes a visible series on pointer hover or keyboard focus. */
+    hover?: 'series' | false;
+    visible: ControlledSignal<readonly TValue[], InteractiveColorLegendChange<TValue>>;
+    placement?: ChartLegendPlacement;
+    ariaLabel?: string;
+    itemWidth?: number;
+    format?: (value: TValue) => string;
+    itemAriaLabel?: (value: TValue, context: InteractiveColorLegendItemContext) => string;
+    emptyLabel?: string;
+}
+export declare function interactiveColorLegend<TValue extends ChartKey>(options: InteractiveColorLegendOptions<TValue>): ChartColorLegend;
