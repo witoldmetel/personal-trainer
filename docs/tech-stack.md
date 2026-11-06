@@ -155,7 +155,7 @@ Phase 1 implementation will follow this outline; this doc does not run it yet.
 
 ### Production
 
-Current app is a Vite SPA. GitHub Actions (`.github/workflows/pipeline.yml`) on `main` runs **typecheck → build → Cloudflare Pages**. Pull requests run typecheck and build only.
+Current app is a Vite SPA. GitHub Actions (`.github/workflows/pipeline.yml`) on `main` runs **typecheck → build → `wrangler deploy`** (static assets Worker). Pull requests run typecheck and build only. Config: `wrangler.jsonc`.
 
 Repo secrets (Settings → Secrets and variables → Actions):
 
@@ -166,9 +166,11 @@ Repo secrets (Settings → Secrets and variables → Actions):
 | `VITE_SUPABASE_URL` | Same value as local `.env` |
 | `VITE_SUPABASE_ANON_KEY` | Same value as local `.env` (anon/publishable only) |
 
-First production URL is `https://personal-trainer.<account>.pages.dev`. Point Supabase Auth Site URL and the GitHub OAuth app homepage at that URL after the first deploy.
+First production URL is `https://personal-trainer.<subdomain>.workers.dev`. Point Supabase Auth Site URL and the GitHub OAuth app homepage at that URL after the first deploy.
 
-When the app moves to TanStack Start, swap the last step for `wrangler deploy` (Workers) and keep the same secrets.
+If Cloudflare **Workers Builds** is also connected to this repo, pause it (Workers & Pages → personal-trainer → Settings → Builds) so only GitHub Actions deploys. Otherwise the two pipelines overwrite each other.
+
+When the app moves to TanStack Start, keep `wrangler deploy` and add a Worker entry; the same secrets stay.
 
 ### Cost
 
@@ -259,6 +261,7 @@ Current scaffold (Vite SPA). Start migration will replace `src/pages` + React Ro
 docs/prd.md
 docs/tech-stack.md
 .github/workflows/pipeline.yml
+wrangler.jsonc
 .cursor/rules/
   stack.mdc
   shadcn-ui.mdc
