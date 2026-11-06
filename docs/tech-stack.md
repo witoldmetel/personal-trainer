@@ -168,7 +168,7 @@ Repo secrets (Settings → Secrets and variables → Actions):
 
 First production URL is `https://personal-trainer.<subdomain>.workers.dev`. Point Supabase Auth Site URL and the GitHub OAuth app homepage at that URL after the first deploy.
 
-If Cloudflare **Workers Builds** is also connected to this repo, pause it (Workers & Pages → personal-trainer → Settings → Builds) so only GitHub Actions deploys. Otherwise the two pipelines overwrite each other.
+If Cloudflare **Workers Builds** is also connected to this repo, pause it (Workers & Pages → personal-trainer → Settings → Builds) so only GitHub Actions deploys. Otherwise the two pipelines overwrite each other. A “build token has been deleted or rolled” error is Cloudflare’s Git build token, not a GitHub Actions secret.
 
 When the app moves to TanStack Start, keep `wrangler deploy` and add a Worker entry; the same secrets stay.
 
