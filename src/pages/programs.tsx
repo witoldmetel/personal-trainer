@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useStore } from '@/lib/store'
@@ -19,7 +20,15 @@ type DialogKind =
   | { type: 'program' }
   | { type: 'day' }
   | { type: 'exercise' }
-  | { type: 'rename'; exerciseId: string; name: string; peId: string; sets: number; reps: number }
+  | {
+      type: 'rename'
+      exerciseId: string
+      name: string
+      peId: string
+      sets: number
+      reps: number
+      usesWeight: boolean
+    }
 
 export function ProgramsPage() {
   const {
@@ -181,6 +190,7 @@ export function ProgramsPage() {
                         </p>
                         <p className="text-xs text-muted-foreground tabular-nums">
                           {pe.targetSets}×{pe.targetReps}
+                          {pe.usesWeight ? '' : ' · no weight'}
                         </p>
                       </div>
                       <div className="flex shrink-0">
@@ -211,6 +221,7 @@ export function ProgramsPage() {
                               peId: pe.id,
                               sets: pe.targetSets,
                               reps: pe.targetReps,
+                              usesWeight: pe.usesWeight,
                             })
                           }
                         >
@@ -258,9 +269,9 @@ export function ProgramsPage() {
         onAddExercise={(value) =>
           addExerciseToDay({ programDayId: dayId, ...value })
         }
-        onRename={(exerciseId, name, peId, sets, reps) => {
+        onRename={(exerciseId, name, peId, sets, reps, usesWeight) => {
           renameExercise(exerciseId, name)
-          updateProgramExerciseTargets(peId, sets, reps)
+          updateProgramExerciseTargets(peId, sets, reps, usesWeight)
         }}
       />
     </div>
@@ -283,6 +294,7 @@ function EditorDialog({
     name: string
     targetSets: number
     targetReps: number
+    usesWeight: boolean
   }) => void
   onRename: (
     exerciseId: string,
@@ -290,6 +302,7 @@ function EditorDialog({
     peId: string,
     sets: number,
     reps: number,
+    usesWeight: boolean,
   ) => void
 }) {
   const open = dialog != null
@@ -308,6 +321,7 @@ function EditorDialog({
         dialog?.type === 'rename' ? dialog.name : '',
       targetSets: dialog?.type === 'rename' ? dialog.sets : 3,
       targetReps: dialog?.type === 'rename' ? dialog.reps : 8,
+      skipWeight: dialog?.type === 'rename' ? !dialog.usesWeight : false,
     },
     onSubmit: ({ value }) => {
       if (!dialog) return
@@ -318,6 +332,7 @@ function EditorDialog({
           name: value.name,
           targetSets: value.targetSets,
           targetReps: value.targetReps,
+          usesWeight: !value.skipWeight,
         })
       }
       if (dialog.type === 'rename') {
@@ -327,6 +342,7 @@ function EditorDialog({
           dialog.peId,
           value.targetSets,
           value.targetReps,
+          !value.skipWeight,
         )
       }
       onClose()
@@ -410,6 +426,21 @@ function EditorDialog({
                 )}
               </form.Field>
             </div>
+          ) : null}
+          {dialog?.type === 'exercise' || dialog?.type === 'rename' ? (
+            <form.Field name="skipWeight">
+              {(field) => (
+                <Label className="flex items-center gap-2 font-normal">
+                  <Checkbox
+                    checked={field.state.value}
+                    onCheckedChange={(checked) =>
+                      field.handleChange(checked === true)
+                    }
+                  />
+                  Skip weight
+                </Label>
+              )}
+            </form.Field>
           ) : null}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>

@@ -32,6 +32,7 @@ import type {
   LoggerRow,
   ProgramDay,
   ProgramExercise,
+  ProgramPlanDay,
   Session,
   StoreState,
 } from '@/lib/types'
@@ -56,6 +57,7 @@ type StoreApi = StoreState & {
     name: string
     targetSets: number
     targetReps: number
+    usesWeight: boolean
   }) => void
   renameExercise: (exerciseId: string, name: string) => void
   removeProgramExercise: (programExerciseId: string) => void
@@ -67,6 +69,7 @@ type StoreApi = StoreState & {
     programExerciseId: string,
     targetSets: number,
     targetReps: number,
+    usesWeight: boolean,
   ) => void
   importHistory: (
     rows: Array<{
@@ -77,6 +80,7 @@ type StoreApi = StoreState & {
       reps: number
       weightKg: number
     }>,
+    planDays?: ProgramPlanDay[],
   ) => { sessions: number; sets: number }
 }
 
@@ -138,8 +142,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const sets = state.sessionSets
           .filter((set) => set.sessionId === session.id && set.exerciseId === exerciseId)
           .sort((a, b) => a.setNumber - b.setNumber)
-        const first = sets.find((set) => set.reps != null && set.weightKg != null)
-        if (first && first.reps != null && first.weightKg != null) {
+        const first = sets.find((set) => set.reps != null)
+        if (first && first.reps != null) {
           return formatLastTime(first.weightKg, first.reps)
         }
       }
@@ -149,25 +153,45 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const loggerRows = (sessionId: string): LoggerRow[] => {
       const session = state.sessions.find((s) => s.id === sessionId)
       if (!session) return []
-      const dayExercises = state.programExercises
-        .filter((pe) => pe.programDayId === session.programDayId)
-        .sort((a, b) => a.sortOrder - b.sortOrder)
-      const sets = state.sessionSets
-        .filter((set) => set.sessionId === sessionId)
-        .sort((a, b) => {
-          const aOrder =
-            dayExercises.find((pe) => pe.exerciseId === a.exerciseId)?.sortOrder ??
-            999
-          const bOrder =
-            dayExercises.find((pe) => pe.exerciseId === b.exerciseId)?.sortOrder ??
-            999
-          if (aOrder !== bOrder) return aOrder - bOrder
-          return a.setNumber - b.setNumber
-        })
+      const sessionSets = state.sessionSets.filter(
+        (set) => set.sessionId === sessionId,
+      )
+      const exerciseOrder: string[] = []
+      for (const pe of [...state.programExercises]
+        .filter((row) => row.programDayId === session.programDayId)
+        .sort((a, b) => a.sortOrder - b.sortOrder)) {
+        if (
+          sessionSets.some((set) => set.exerciseId === pe.exerciseId) &&
+          !exerciseOrder.includes(pe.exerciseId)
+        ) {
+          exerciseOrder.push(pe.exerciseId)
+        }
+      }
+      for (const set of sessionSets) {
+        if (!exerciseOrder.includes(set.exerciseId)) {
+          exerciseOrder.push(set.exerciseId)
+        }
+      }
+      const sets = [...sessionSets].sort((a, b) => {
+        const aOrder = exerciseOrder.indexOf(a.exerciseId)
+        const bOrder = exerciseOrder.indexOf(b.exerciseId)
+        if (aOrder !== bOrder) return aOrder - bOrder
+        return a.setNumber - b.setNumber
+      })
 
       return sets.map((set, index) => {
         const exercise = state.exercises.find((e) => e.id === set.exerciseId)
+        const pe = state.programExercises.find(
+          (row) =>
+            row.programDayId === session.programDayId &&
+            row.exerciseId === set.exerciseId,
+        )
         const next = sets[index + 1]
+        const usesWeight =
+          pe?.usesWeight ??
+          sessionSets.some(
+            (row) => row.exerciseId === set.exerciseId && (row.weightKg ?? 0) > 0,
+          )
         return {
           setId: set.id,
           sessionId: set.sessionId,
@@ -177,6 +201,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           reps: set.reps,
           weightKg: set.weightKg,
           lastTime: lastTimeFor(set.exerciseId, sessionId),
+          usesWeight,
           isLastOfExercise: !next || next.exerciseId !== set.exerciseId,
           rowIndex: index,
         }
@@ -298,7 +323,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         runPersist(() => persistDay(day))
         return id
       },
-      addExerciseToDay: ({ programDayId, name, targetSets, targetReps }) => {
+      addExerciseToDay: ({
+        programDayId,
+        name,
+        targetSets,
+        targetReps,
+        usesWeight,
+      }) => {
         const trimmed = name.trim()
         const existing = state.exercises.find(
           (e) => e.name.toLowerCase() === trimmed.toLowerCase(),
@@ -314,6 +345,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           sortOrder,
           targetSets,
           targetReps,
+          usesWeight,
         }
         setGym((s) => ({
           ...s,
@@ -388,20 +420,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         programExerciseId,
         targetSets,
         targetReps,
+        usesWeight,
       ) => {
         setGym((s) => ({
           ...s,
           programExercises: s.programExercises.map((pe) =>
             pe.id === programExerciseId
-              ? { ...pe, targetSets, targetReps }
+              ? { ...pe, targetSets, targetReps, usesWeight }
               : pe,
           ),
         }))
         runPersist(() =>
-          persistProgramExerciseTargets(programExerciseId, targetSets, targetReps),
+          persistProgramExerciseTargets(
+            programExerciseId,
+            targetSets,
+            targetReps,
+            usesWeight,
+          ),
         )
       },
-      importHistory: (rows) => {
+      importHistory: (rows, planDays = []) => {
         let sessionsAdded = 0
         let setsAdded = 0
         const previous = state
@@ -427,6 +465,99 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           exercises.map((e) => [e.name.toLowerCase(), e] as const),
         )
 
+        const ensureDay = (name: string) => {
+          const key = name.toLowerCase()
+          let day = dayByKey.get(key)
+          if (day) return day
+          day = {
+            id: createId('day'),
+            programId: program.id,
+            name,
+            sortOrder: programDays.filter((d) => d.programId === program.id)
+              .length,
+          }
+          programDays.push(day)
+          dayByKey.set(key, day)
+          return day
+        }
+
+        const ensureExercise = (name: string) => {
+          const key = name.toLowerCase()
+          let exercise = exerciseByName.get(key)
+          if (exercise) return exercise
+          exercise = { id: createId('ex'), name }
+          exercises.push(exercise)
+          exerciseByName.set(key, exercise)
+          return exercise
+        }
+
+        const plansFromRows = (): ProgramPlanDay[] => {
+          const days: ProgramPlanDay[] = []
+          const index = new Map<string, ProgramPlanDay>()
+          for (const row of rows) {
+            const name = row.exerciseName.trim()
+            if (!name) continue
+            const key = row.dayName.toLowerCase()
+            let day = index.get(key)
+            if (!day) {
+              day = { dayName: row.dayName, exercises: [] }
+              index.set(key, day)
+              days.push(day)
+            }
+            const existing = day.exercises.find(
+              (item) => item.name.toLowerCase() === name.toLowerCase(),
+            )
+            if (existing) {
+              existing.targetSets = Math.max(existing.targetSets, row.setNumber)
+              if (row.weightKg > 0) existing.usesWeight = true
+            } else {
+              day.exercises.push({
+                name,
+                targetSets: row.setNumber,
+                targetReps: row.reps,
+                usesWeight: row.weightKg > 0,
+              })
+            }
+          }
+          return days
+        }
+
+        const applyPlan = (day: ProgramDay, plan: ProgramPlanDay['exercises']) => {
+          for (const [sortOrder, item] of plan.entries()) {
+            const name = item.name.trim()
+            if (!name) continue
+            const exercise = ensureExercise(name)
+            const existingPe = programExercises.find(
+              (pe) =>
+                pe.programDayId === day.id && pe.exerciseId === exercise.id,
+            )
+            const targetSets = Math.max(item.targetSets, 1)
+            const targetReps = item.targetReps > 0 ? item.targetReps : 8
+            const usesWeight = item.usesWeight !== false
+            if (existingPe) {
+              existingPe.sortOrder = sortOrder
+              existingPe.targetSets = Math.max(existingPe.targetSets, targetSets)
+              existingPe.targetReps = targetReps
+              existingPe.usesWeight = usesWeight
+            } else {
+              programExercises.push({
+                id: createId('pe'),
+                programDayId: day.id,
+                exerciseId: exercise.id,
+                sortOrder,
+                targetSets,
+                targetReps,
+                usesWeight,
+              })
+            }
+          }
+        }
+
+        const plans = planDays.length > 0 ? planDays : plansFromRows()
+        for (const plan of plans) {
+          applyPlan(ensureDay(plan.dayName), plan.exercises)
+        }
+
         const groups = new Map<string, typeof rows>()
         for (const row of rows) {
           const exerciseName = row.exerciseName.trim()
@@ -449,17 +580,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
         for (const [key, group] of groups) {
           const [date, dayKey] = key.split('|')
-          let day = dayByKey.get(dayKey)
-          if (!day) {
-            day = {
-              id: createId('day'),
-              programId: program.id,
-              name: group[0]?.dayName ?? 'Day',
-              sortOrder: programDays.filter((d) => d.programId === program.id).length,
-            }
-            programDays.push(day)
-            dayByKey.set(dayKey, day)
-          }
+          const day = ensureDay(group[0]?.dayName ?? dayKey)
           let session = sessions.find(
             (ses) => ses.performedOn === date && ses.programDayId === day.id,
           )
@@ -474,11 +595,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             sessionsAdded += 1
           }
           for (const row of group) {
-            let exercise = exerciseByName.get(row.exerciseName.toLowerCase())
-            if (!exercise) {
-              exercise = { id: createId('ex'), name: row.exerciseName }
-              exercises.push(exercise)
-              exerciseByName.set(row.exerciseName.toLowerCase(), exercise)
+            const exercise = ensureExercise(row.exerciseName)
+            const onDay = programExercises.filter(
+              (pe) => pe.programDayId === day.id,
+            )
+            const existingPe = onDay.find((pe) => pe.exerciseId === exercise.id)
+            if (existingPe) {
+              existingPe.targetSets = Math.max(
+                existingPe.targetSets,
+                row.setNumber,
+              )
+              if (row.weightKg > 0) existingPe.usesWeight = true
+            } else {
+              programExercises.push({
+                id: createId('pe'),
+                programDayId: day.id,
+                exerciseId: exercise.id,
+                sortOrder: onDay.length,
+                targetSets: row.setNumber,
+                targetReps: row.reps,
+                usesWeight: row.weightKg > 0,
+              })
             }
             const dup = sessionSets.find(
               (set) =>

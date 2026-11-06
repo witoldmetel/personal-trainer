@@ -37,6 +37,7 @@ export function formatChartDate(iso: string): string {
   })
 }
 
-export function formatLastTime(weightKg: number, reps: number): string {
+export function formatLastTime(weightKg: number | null, reps: number): string {
+  if (weightKg == null || weightKg === 0) return `${reps} reps`
   return `${weightKg} kg × ${reps}`
 }

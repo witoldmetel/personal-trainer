@@ -52,8 +52,17 @@ function pe(
   sortOrder: number,
   targetSets: number,
   targetReps: number,
+  usesWeight = true,
 ): ProgramExercise {
-  return { id, programDayId, exerciseId, sortOrder, targetSets, targetReps }
+  return {
+    id,
+    programDayId,
+    exerciseId,
+    sortOrder,
+    targetSets,
+    targetReps,
+    usesWeight,
+  }
 }
 
 const programExercises: ProgramExercise[] = [

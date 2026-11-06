@@ -1,3 +1,4 @@
+import { createId } from '@/lib/ids'
 import { supabase } from '@/lib/supabase'
 import type {
   Exercise,
@@ -34,6 +35,7 @@ type ProgramExerciseRow = {
   sort_order: number
   target_sets: number
   target_reps: number
+  uses_weight?: boolean | null
 }
 type SessionRow = {
   id: string
@@ -80,25 +82,36 @@ export async function loadGym(): Promise<StoreState> {
     db.from('exercises').select('id, name, muscle_group'),
     db
       .from('program_exercises')
-      .select('id, program_day_id, exercise_id, sort_order, target_sets, target_reps'),
+      .select(
+        'id, program_day_id, exercise_id, sort_order, target_sets, target_reps, uses_weight',
+      ),
     db.from('sessions').select('id, program_day_id, performed_on, status'),
     db
       .from('session_sets')
       .select('id, session_id, exercise_id, set_number, reps, weight_kg'),
   ])
 
+  let peResult = programExercises
+  if (peResult.error && /uses_weight/i.test(peResult.error.message)) {
+    peResult = await db
+      .from('program_exercises')
+      .select(
+        'id, program_day_id, exercise_id, sort_order, target_sets, target_reps',
+      )
+  }
+
   for (const result of [
     programs,
     programDays,
     exercises,
-    programExercises,
+    peResult,
     sessions,
     sessionSets,
   ]) {
     await throwIfError(result.error)
   }
 
-  return {
+  const state: StoreState = {
     programs: ((programs.data ?? []) as ProgramRow[]).map((row) => ({
       id: row.id,
       name: row.name,
@@ -114,7 +127,7 @@ export async function loadGym(): Promise<StoreState> {
       name: row.name,
       muscleGroup: row.muscle_group ?? undefined,
     })),
-    programExercises: ((programExercises.data ?? []) as ProgramExerciseRow[]).map(
+    programExercises: ((peResult.data ?? []) as ProgramExerciseRow[]).map(
       (row) => ({
         id: row.id,
         programDayId: row.program_day_id,
@@ -122,6 +135,7 @@ export async function loadGym(): Promise<StoreState> {
         sortOrder: row.sort_order,
         targetSets: row.target_sets,
         targetReps: row.target_reps,
+        usesWeight: row.uses_weight !== false,
       }),
     ),
     sessions: ((sessions.data ?? []) as SessionRow[]).map((row) => ({
@@ -139,6 +153,116 @@ export async function loadGym(): Promise<StoreState> {
       weightKg: row.weight_kg == null ? null : Number(row.weight_kg),
     })),
   }
+
+  const missing = deriveMissingProgramExercises(state)
+  const withMissing = {
+    ...state,
+    programExercises: [...state.programExercises, ...missing],
+  }
+  const flagged = applySkipWeightFromHistory(withMissing)
+  const changedFlags = flagged.filter((pe) => {
+    const prev = withMissing.programExercises.find((row) => row.id === pe.id)
+    return prev != null && prev.usesWeight !== pe.usesWeight
+  })
+  if (missing.length === 0 && changedFlags.length === 0) return state
+  const uid = await userId()
+  if (missing.length > 0) {
+    try {
+      await insertChunked(
+        'program_exercises',
+        missing.map((row) => ({
+          id: row.id,
+          user_id: uid,
+          program_day_id: row.programDayId,
+          exercise_id: row.exerciseId,
+          sort_order: row.sortOrder,
+          target_sets: row.targetSets,
+          target_reps: row.targetReps,
+          uses_weight: row.usesWeight,
+        })),
+      )
+    } catch {
+      await insertChunked(
+        'program_exercises',
+        missing.map((row) => ({
+          id: row.id,
+          user_id: uid,
+          program_day_id: row.programDayId,
+          exercise_id: row.exerciseId,
+          sort_order: row.sortOrder,
+          target_sets: row.targetSets,
+          target_reps: row.targetReps,
+        })),
+      )
+    }
+  }
+  for (const row of changedFlags) {
+    try {
+      await persistProgramExerciseTargets(
+        row.id,
+        row.targetSets,
+        row.targetReps,
+        row.usesWeight,
+      )
+    } catch {
+      break
+    }
+  }
+  return { ...state, programExercises: flagged }
+}
+
+function deriveMissingProgramExercises(state: StoreState): ProgramExercise[] {
+  const missing: ProgramExercise[] = []
+  for (const day of state.programDays) {
+    if (state.programExercises.some((pe) => pe.programDayId === day.id)) continue
+    const daySessions = state.sessions
+      .filter((session) => session.programDayId === day.id)
+      .sort((a, b) => a.performedOn.localeCompare(b.performedOn))
+    const order: string[] = []
+    const byExercise = new Map<string, SessionSet[]>()
+    for (const session of daySessions) {
+      for (const set of state.sessionSets) {
+        if (set.sessionId !== session.id) continue
+        if (!order.includes(set.exerciseId)) order.push(set.exerciseId)
+        const list = byExercise.get(set.exerciseId) ?? []
+        list.push(set)
+        byExercise.set(set.exerciseId, list)
+      }
+    }
+    for (const [sortOrder, exerciseId] of order.entries()) {
+      const exSets = byExercise.get(exerciseId) ?? []
+      const targetSets = Math.max(...exSets.map((set) => set.setNumber), 1)
+      const targetReps = exSets.find((set) => set.reps != null)?.reps ?? 8
+      missing.push({
+        id: createId('pe'),
+        programDayId: day.id,
+        exerciseId,
+        sortOrder,
+        targetSets,
+        targetReps,
+        usesWeight: exSets.some((set) => (set.weightKg ?? 0) > 0),
+      })
+    }
+  }
+  return missing
+}
+
+function applySkipWeightFromHistory(state: StoreState): ProgramExercise[] {
+  return state.programExercises.map((pe) => {
+    if (!pe.usesWeight) return pe
+    const daySessionIds = new Set(
+      state.sessions
+        .filter((session) => session.programDayId === pe.programDayId)
+        .map((session) => session.id),
+    )
+    const sets = state.sessionSets.filter(
+      (set) =>
+        daySessionIds.has(set.sessionId) && set.exerciseId === pe.exerciseId,
+    )
+    if (sets.length === 0) return pe
+    if (sets.some((set) => (set.weightKg ?? 0) > 0)) return pe
+    return { ...pe, usesWeight: false }
+  })
 }
 
 export async function ensureProfile(githubUsername: string) {
@@ -206,6 +330,7 @@ export async function persistProgramExercise(row: ProgramExercise) {
       sort_order: row.sortOrder,
       target_sets: row.targetSets,
       target_reps: row.targetReps,
+      uses_weight: row.usesWeight,
     })
   await throwIfError(error)
 }
@@ -297,10 +422,15 @@ export async function persistProgramExerciseTargets(
   id: string,
   targetSets: number,
   targetReps: number,
+  usesWeight: boolean,
 ) {
   const { error } = await client()
     .from('program_exercises')
-    .update({ target_sets: targetSets, target_reps: targetReps })
+    .update({
+      target_sets: targetSets,
+      target_reps: targetReps,
+      uses_weight: usesWeight,
+    })
     .eq('id', id)
   await throwIfError(error)
 }
@@ -311,6 +441,7 @@ export async function persistImport(next: StoreState, previous: StoreState) {
   const prevDayIds = new Set(previous.programDays.map((row) => row.id))
   const prevExerciseIds = new Set(previous.exercises.map((row) => row.id))
   const prevSessionIds = new Set(previous.sessions.map((row) => row.id))
+  const prevPeIds = new Set(previous.programExercises.map((row) => row.id))
   const prevSetById = new Map(previous.sessionSets.map((row) => [row.id, row]))
 
   await insertChunked(
@@ -343,6 +474,45 @@ export async function persistImport(next: StoreState, previous: StoreState) {
       })),
   )
   await insertChunked(
+    'program_exercises',
+    next.programExercises
+      .filter((row) => !prevPeIds.has(row.id))
+      .map((row) => ({
+        id: row.id,
+        user_id: uid,
+        program_day_id: row.programDayId,
+        exercise_id: row.exerciseId,
+        sort_order: row.sortOrder,
+        target_sets: row.targetSets,
+        target_reps: row.targetReps,
+        uses_weight: row.usesWeight,
+      })),
+  )
+  const db = client()
+  for (const row of next.programExercises) {
+    if (!prevPeIds.has(row.id)) continue
+    const prev = previous.programExercises.find((pe) => pe.id === row.id)
+    if (
+      prev &&
+      prev.sortOrder === row.sortOrder &&
+      prev.targetSets === row.targetSets &&
+      prev.targetReps === row.targetReps &&
+      prev.usesWeight === row.usesWeight
+    ) {
+      continue
+    }
+    const { error } = await db
+      .from('program_exercises')
+      .update({
+        sort_order: row.sortOrder,
+        target_sets: row.targetSets,
+        target_reps: row.targetReps,
+        uses_weight: row.usesWeight,
+      })
+      .eq('id', row.id)
+    await throwIfError(error)
+  }
+  await insertChunked(
     'sessions',
     next.sessions
       .filter((row) => !prevSessionIds.has(row.id))
@@ -356,7 +526,6 @@ export async function persistImport(next: StoreState, previous: StoreState) {
   )
 
   const newSets: object[] = []
-  const db = client()
   for (const set of next.sessionSets) {
     const prev = prevSetById.get(set.id)
     if (!prev) {

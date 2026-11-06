@@ -23,6 +23,7 @@ export type ProgramExercise = {
   sortOrder: number
   targetSets: number
   targetReps: number
+  usesWeight: boolean
 }
 
 export type SessionStatus = 'in_progress' | 'done'
@@ -52,8 +53,19 @@ export type LoggerRow = {
   reps: number | null
   weightKg: number | null
   lastTime: string | null
+  usesWeight: boolean
   isLastOfExercise: boolean
   rowIndex: number
+}
+
+export type ProgramPlanDay = {
+  dayName: string
+  exercises: Array<{
+    name: string
+    targetSets: number
+    targetReps: number
+    usesWeight: boolean
+  }>
 }
 
 export type StoreState = {

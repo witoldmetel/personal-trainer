@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx'
+import type { ProgramPlanDay } from '@/lib/types'
 
 export const APP_FIELDS = [
   'Date',
@@ -28,7 +29,37 @@ export type ParsedSpreadsheet = {
   guessed: Partial<Record<AppField, string>>
   preview: MappedSet[]
   allRows: MappedSet[]
+  planDays: ProgramPlanDay[]
   warnings: string[]
+}
+
+export function planFromRows(rows: MappedSet[]): ProgramPlanDay[] {
+  const days: ProgramPlanDay[] = []
+  const index = new Map<string, ProgramPlanDay>()
+  for (const row of rows) {
+    const key = row.dayName.toLowerCase()
+    let day = index.get(key)
+    if (!day) {
+      day = { dayName: row.dayName, exercises: [] }
+      index.set(key, day)
+      days.push(day)
+    }
+    const existing = day.exercises.find(
+      (exercise) => exercise.name.toLowerCase() === row.exerciseName.toLowerCase(),
+    )
+    if (existing) {
+      existing.targetSets = Math.max(existing.targetSets, row.setNumber)
+      if (row.weightKg > 0) existing.usesWeight = true
+    } else {
+      day.exercises.push({
+        name: row.exerciseName,
+        targetSets: row.setNumber,
+        targetReps: row.reps,
+        usesWeight: row.weightKg > 0,
+      })
+    }
+  }
+  return days
 }
 
 function cellText(value: unknown): string {
@@ -121,8 +152,12 @@ function columnWeight(headerRow: unknown[], col: number): number | null {
   return null
 }
 
-function parseAtjSheet(rows: unknown[][], dayName: string): MappedSet[] {
+function parseAtjSheet(
+  rows: unknown[][],
+  dayName: string,
+): { sets: MappedSet[]; plan: ProgramPlanDay } {
   const out: MappedSet[] = []
+  const planExercises: ProgramPlanDay['exercises'] = []
   let exercise = ''
   let headerRow: unknown[] = []
   let sessionDates: string[] = []
@@ -137,6 +172,18 @@ function parseAtjSheet(rows: unknown[][], dayName: string): MappedSet[] {
         continue
       }
       exercise = next
+      if (
+        !planExercises.some(
+          (item) => item.name.toLowerCase() === next.toLowerCase(),
+        )
+      ) {
+        planExercises.push({
+          name: next,
+          targetSets: 0,
+          targetReps: 8,
+          usesWeight: true,
+        })
+      }
       headerRow = row
       const lastCol = Math.max(row.length - 1, 2)
       sessionDates = Array.from({ length: lastCol + 1 }, (_, col) => {
@@ -154,6 +201,14 @@ function parseAtjSheet(rows: unknown[][], dayName: string): MappedSet[] {
     }
     const setNumber = parseSetLabel(a)
     if (!exercise || setNumber == null) continue
+    const current = planExercises.find(
+      (item) => item.name.toLowerCase() === exercise.toLowerCase(),
+    )
+    if (current) {
+      current.targetSets = Math.max(current.targetSets, setNumber)
+      const goalReps = parseWhole(row[2], 1, 100)
+      if (goalReps != null) current.targetReps = goalReps
+    }
     for (let col = 2; col < row.length; col++) {
       const reps = parseWhole(row[col], 1, 100)
       if (reps == null) continue
@@ -173,7 +228,16 @@ function parseAtjSheet(rows: unknown[][], dayName: string): MappedSet[] {
       })
     }
   }
-  return out
+  for (const item of planExercises) {
+    if (item.targetSets < 1) item.targetSets = 3
+    const related = out.filter(
+      (set) => set.exerciseName.toLowerCase() === item.name.toLowerCase(),
+    )
+    if (related.length > 0) {
+      item.usesWeight = related.some((set) => set.weightKg > 0)
+    }
+  }
+  return { sets: out, plan: { dayName, exercises: planExercises } }
 }
 
 function mapTallRows(
@@ -230,7 +294,7 @@ export function parseWorkbook(fileName: string, data: ArrayBuffer): ParsedSpread
   })
 
   if (atjSheets.length > 0) {
-    const allRows = atjSheets.flatMap((name) => {
+    const parsedSheets = atjSheets.map((name) => {
       const grid = XLSX.utils.sheet_to_json(workbook.Sheets[name], {
         header: 1,
         defval: '',
@@ -238,6 +302,8 @@ export function parseWorkbook(fileName: string, data: ArrayBuffer): ParsedSpread
       }) as unknown[][]
       return parseAtjSheet(grid, name)
     })
+    const allRows = parsedSheets.flatMap((sheet) => sheet.sets)
+    const planDays = parsedSheets.map((sheet) => sheet.plan)
     if (allRows.length === 0) {
       warnings.push('Average To Jacked layout detected, but no set cells could be read.')
     } else {
@@ -260,6 +326,7 @@ export function parseWorkbook(fileName: string, data: ArrayBuffer): ParsedSpread
       },
       preview: allRows.slice(0, 12),
       allRows,
+      planDays,
       warnings,
     }
   }
@@ -292,6 +359,7 @@ export function parseWorkbook(fileName: string, data: ArrayBuffer): ParsedSpread
     guessed,
     preview: allRows.slice(0, 12),
     allRows,
+    planDays: planFromRows(allRows),
     warnings,
   }
 }

@@ -199,7 +199,12 @@ export function ImportPage() {
             <Button
               disabled={mappedRows.length === 0}
               onClick={() => {
-                const result = importHistory(mappedRows)
+                const result = importHistory(
+                  mappedRows,
+                  parsed.kind === 'atj'
+                    ? parsed.planDays
+                    : undefined,
+                )
                 toast.success('History imported', {
                   description: `${result.sets} sets across ${result.sessions} sessions.`,
                 })

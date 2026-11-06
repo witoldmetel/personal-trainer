@@ -40,8 +40,12 @@ create table if not exists public.program_exercises (
   exercise_id text not null references public.exercises (id) on delete restrict,
   sort_order integer not null default 0,
   target_sets integer not null,
-  target_reps integer not null
+  target_reps integer not null,
+  uses_weight boolean not null default true
 );
+
+alter table public.program_exercises
+  add column if not exists uses_weight boolean not null default true;
 
 create table if not exists public.sessions (
   id text primary key,

@@ -42,7 +42,7 @@ function NumberCell({
   col: string
 }) {
   const { updateSet } = useStore()
-  const filled = row.reps != null && row.weightKg != null
+  const filled = row.reps != null && (!row.usesWeight || row.weightKg != null)
 
   return (
     <Input
@@ -110,9 +110,12 @@ const columns = helper.columns([
   }),
   helper.accessor('weightKg', {
     header: 'Weight (kg)',
-    cell: ({ row }) => (
-      <NumberCell row={row.original} field="weightKg" col="weight" />
-    ),
+    cell: ({ row }) =>
+      row.original.usesWeight ? (
+        <NumberCell row={row.original} field="weightKg" col="weight" />
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      ),
   }),
   helper.accessor('lastTime', {
     header: 'Last time',
@@ -167,7 +170,7 @@ export function SetLogger({ sessionId }: { sessionId: string }) {
           <tbody>
             {groups.map((group) =>
               group.rows.map((row, i) => {
-                const filled = row.reps != null && row.weightKg != null
+                const filled = row.reps != null && (!row.usesWeight || row.weightKg != null)
                 return (
                   <tr
                     key={row.setId}
@@ -193,7 +196,11 @@ export function SetLogger({ sessionId }: { sessionId: string }) {
                       <NumberCell row={row} field="reps" col="reps" />
                     </td>
                     <td className="px-3 py-1.5 align-middle">
-                      <NumberCell row={row} field="weightKg" col="weight" />
+                      {row.usesWeight ? (
+                        <NumberCell row={row} field="weightKg" col="weight" />
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-1.5 align-middle">
                       <span className="tabular-nums text-muted-foreground">
@@ -240,7 +247,9 @@ function MobileSets({ rows }: { rows: LoggerRow[] }) {
             Set {row.setNumber}
           </span>
           <NumberCell row={row} field="reps" col="reps" />
-          <NumberCell row={row} field="weightKg" col="weight" />
+          {row.usesWeight ? (
+            <NumberCell row={row} field="weightKg" col="weight" />
+          ) : null}
         </div>
       ))}
       {last ? (
