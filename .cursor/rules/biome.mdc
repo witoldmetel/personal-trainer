@@ -1,0 +1,13 @@
+---
+description: Lint and format with Biome, not ESLint or Prettier
+globs: "**/*.{ts,tsx,js,jsx,json,css}"
+alwaysApply: false
+---
+
+# Biome
+
+- Linter and formatter: Biome (`biome.json`). Commands: `pnpm lint`, `pnpm lint:fix`, `pnpm format`.
+- Do not add ESLint, Prettier, oxlint, or a second formatter.
+- Match `biome.json`: 2-space indent, single quotes, semicolons as needed.
+- Do not run lint/format unless the user asks. Typecheck with `tsc` is fine when compiling.
+- Prefer fixing the code over adding `biome-ignore`. If an ignore is required, keep it one line and say why.

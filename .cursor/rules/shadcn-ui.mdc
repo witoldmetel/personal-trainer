@@ -1,0 +1,24 @@
+---
+description: Use shadcn/ui primitives for React UI
+globs: "**/*.tsx"
+alwaysApply: false
+---
+
+# shadcn/ui
+
+Official registry: https://ui.shadcn.com/
+
+- Import from `@/components/ui/*` (see `components.json`).
+- Add missing pieces with `pnpm dlx shadcn@latest add <name>` — do not hand-roll a parallel Button, Dialog, Select, or Input.
+- Style with Tailwind tokens (`bg-background`, `text-muted-foreground`, `text-primary`). Keep the light zinc/emerald theme. No extra CSS frameworks.
+- Session logging stays a dense table (TanStack Table), not a one-set-per-screen wizard.
+- Leave generated files under `src/components/ui` alone unless a shadcn upgrade requires it.
+
+```tsx
+// BAD
+<button className="rounded bg-green-600 px-3 py-1">Save</button>
+
+// GOOD
+import { Button } from '@/components/ui/button'
+<Button>Save</Button>
+```

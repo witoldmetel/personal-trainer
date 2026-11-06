@@ -1,0 +1,15 @@
+---
+description: Personal Trainer stack — shadcn/ui, Biome, TanStack, Supabase
+alwaysApply: true
+---
+
+# Stack
+
+- Package manager: pnpm. Do not add package-lock.json or use npm/yarn for installs.
+- UI: [shadcn/ui](https://ui.shadcn.com/) + Tailwind. Add components with `pnpm dlx shadcn@latest add`. Put them in `src/components/ui`. Do not add MUI, Chakra, Ant, Daisy, or a second button/input kit.
+- Lint and format: [Biome](https://biomejs.dev/). Config is `biome.json`. Do not add ESLint, Prettier, or oxlint.
+- App direction: TanStack Start (Router, Query, Table, Form; Charts in phase 2). Current scaffold may still be Vite + React Router; do not add Next.js.
+- Data: Supabase later. Excel import uses SheetJS (`xlsx`).
+- Icons: lucide-react (shadcn default).
+
+When a shadcn primitive exists (Button, Input, Dialog, Select, Badge), use it instead of a custom element.
