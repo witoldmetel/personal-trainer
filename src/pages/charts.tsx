@@ -11,7 +11,7 @@ import {
   TrendCallout,
 } from '@/components/progress-ui'
 import { Input } from '@/components/ui/input'
-import { isoDaysAgo, todayIso } from '@/lib/dates'
+import { compareIso, isoDaysAgo, todayIso } from '@/lib/dates'
 import { useStore } from '@/lib/store'
 import { buildProgressView, formatKg, type DashboardFilters } from '@/lib/stats'
 
@@ -27,7 +27,8 @@ export function ChartsPage() {
   const [exerciseId, setExerciseId] = useState('all')
 
   const earliest = sessions.reduce(
-    (min, session) => (session.performedOn < min ? session.performedOn : min),
+    (min, session) =>
+      compareIso(session.performedOn, min) < 0 ? session.performedOn : min,
     todayIso(),
   )
 

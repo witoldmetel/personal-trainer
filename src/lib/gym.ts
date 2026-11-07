@@ -1,5 +1,10 @@
+import { compareIso, dateIso } from '@/lib/dates'
 import { createId } from '@/lib/ids'
-import { parseIsoWeekday, WeekdayMigrationError } from '@/lib/schedule'
+import {
+  parseIsoWeekday,
+  spreadDuplicateDates,
+  WeekdayMigrationError,
+} from '@/lib/schedule'
 import { supabase } from '@/lib/supabase'
 import {
   isFilledSet,
@@ -172,7 +177,7 @@ export async function loadGym(): Promise<StoreState> {
     sessions: ((sessions.data ?? []) as SessionRow[]).map((row) => ({
       id: row.id,
       programDayId: row.program_day_id,
-      performedOn: row.performed_on.slice(0, 10),
+      performedOn: dateIso(row.performed_on),
       status: row.status,
     })),
     sessionSets: ((sessionSets.data ?? []) as SessionSetRow[]).map((row) => ({
@@ -185,7 +190,8 @@ export async function loadGym(): Promise<StoreState> {
     })),
   }
 
-  const state = await dropEmptyDoneSessions(built)
+  const emptied = await dropEmptyDoneSessions(built)
+  const state = await uniqueSessionDates(emptied)
   const missing = deriveMissingProgramExercises(state)
   const withMissing = {
     ...state,
@@ -249,7 +255,7 @@ function deriveMissingProgramExercises(state: StoreState): ProgramExercise[] {
     if (state.programExercises.some((pe) => pe.programDayId === day.id)) continue
     const daySessions = state.sessions
       .filter((session) => session.programDayId === day.id)
-      .sort((a, b) => a.performedOn.localeCompare(b.performedOn))
+      .sort((a, b) => compareIso(a.performedOn, b.performedOn))
     const order: string[] = []
     const byExercise = new Map<string, SessionSet[]>()
     for (const session of daySessions) {
@@ -393,7 +399,7 @@ export async function persistSessionDates(
   for (const row of updates) {
     const { error } = await db
       .from('sessions')
-      .update({ performed_on: row.performedOn })
+      .update({ performed_on: dateIso(row.performedOn) })
       .eq('id', row.id)
     await throwIfError(error)
   }
@@ -506,7 +512,7 @@ export async function persistSessionStatus(sessionId: string, status: SessionSta
 export async function persistSessionDate(sessionId: string, performedOn: string) {
   const { error } = await client()
     .from('sessions')
-    .update({ performed_on: performedOn })
+    .update({ performed_on: dateIso(performedOn) })
     .eq('id', sessionId)
   await throwIfError(error)
 }
@@ -527,6 +533,27 @@ export async function persistSetPatch(
 export async function persistRemoveSession(sessionId: string) {
   const { error } = await client().from('sessions').delete().eq('id', sessionId)
   await throwIfError(error)
+}
+
+async function uniqueSessionDates(state: StoreState): Promise<StoreState> {
+  const changes = spreadDuplicateDates(state.sessions, state.programDays)
+  if (changes.length === 0) return state
+  await persistSessionDates(
+    changes.map((change) => ({
+      id: change.sessionId,
+      performedOn: change.to,
+    })),
+  )
+  const next = new Map(
+    changes.map((change) => [change.sessionId, change.to] as const),
+  )
+  return {
+    ...state,
+    sessions: state.sessions.map((session) => {
+      const performedOn = next.get(session.id)
+      return performedOn ? { ...session, performedOn } : session
+    }),
+  }
 }
 
 async function dropEmptyDoneSessions(state: StoreState): Promise<StoreState> {

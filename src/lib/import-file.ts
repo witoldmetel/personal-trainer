@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx'
-import { addDaysIso, isoDaysAgo } from '@/lib/dates'
+import { addDaysIso, dateIso, isIsoDate, isoDaysAgo, nextFreeIso } from '@/lib/dates'
+import { isValid, parse } from 'date-fns'
 import type { ProgramPlanDay } from '@/lib/types'
 
 export const APP_FIELDS = [
@@ -65,7 +66,7 @@ export function planFromRows(rows: MappedSet[]): ProgramPlanDay[] {
 
 function cellText(value: unknown): string {
   if (value == null) return ''
-  if (value instanceof Date) return value.toISOString().slice(0, 10)
+  if (value instanceof Date) return dateIso(value)
   return String(value).trim()
 }
 
@@ -98,31 +99,30 @@ function parseWhole(value: unknown, min: number, max: number): number | null {
 }
 
 function parseDate(value: unknown): string | null {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    const y = value.getFullYear()
-    const m = String(value.getMonth() + 1).padStart(2, '0')
-    const d = String(value.getDate()).padStart(2, '0')
-    return `${y}-${m}-${d}`
-  }
+  if (value instanceof Date && isValid(value)) return dateIso(value)
   const text = cellText(value)
-  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text
+  if (isIsoDate(text)) return text
   const dmy = text.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/)
   if (dmy) {
-    const day = Number(dmy[1])
-    const month = Number(dmy[2])
     let year = Number(dmy[3])
     if (year < 100) year += 2000
-    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    }
+    const parsed = parse(
+      `${dmy[1].padStart(2, '0')}/${dmy[2].padStart(2, '0')}/${year}`,
+      'dd/MM/yyyy',
+      new Date(),
+    )
+    if (isValid(parsed)) return dateIso(parsed)
   }
   const n = parseNumber(text)
   if (n != null && n > 20000 && n < 60000) {
-    const parsed = XLSX.SSF.parse_date_code(n)
-    if (parsed) {
-      const m = String(parsed.m).padStart(2, '0')
-      const d = String(parsed.d).padStart(2, '0')
-      return `${parsed.y}-${m}-${d}`
+    const serial = XLSX.SSF.parse_date_code(n)
+    if (serial) {
+      const parsed = parse(
+        `${serial.y}-${String(serial.m).padStart(2, '0')}-${String(serial.d).padStart(2, '0')}`,
+        'yyyy-MM-dd',
+        new Date(),
+      )
+      if (isValid(parsed)) return dateIso(parsed)
     }
   }
   return null
@@ -171,15 +171,21 @@ function atjDatesBySheet(
   }
 
   const result = new Map<string, string[]>()
-  for (let dayIndex = 0; dayIndex < ordered.length; dayIndex++) {
-    const dates: string[] = Array.from({ length: lastCol + 1 }, () => '')
-    for (let col = 3; col <= lastCol; col++) {
+  const used = new Set<string>()
+  for (let col = 3; col <= lastCol; col++) {
+    for (let dayIndex = 0; dayIndex < ordered.length; dayIndex++) {
+      let dates = result.get(ordered[dayIndex].name)
+      if (!dates) {
+        dates = Array.from({ length: lastCol + 1 }, () => '')
+        result.set(ordered[dayIndex].name, dates)
+      }
       const cycleIndex = lastCol - col
       const day1 =
         day1Dates[col] ?? isoDaysAgo(cycleIndex * nDays + (nDays - 1))
-      dates[col] = addDaysIso(day1, dayIndex)
+      const date = nextFreeIso(addDaysIso(day1, dayIndex), used)
+      dates[col] = date
+      used.add(date)
     }
-    result.set(ordered[dayIndex].name, dates)
   }
   return result
 }

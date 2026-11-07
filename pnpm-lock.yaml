@@ -35,6 +35,9 @@ importers:
       cn:
         specifier: 0.5.2
         version: 0.5.2
+      date-fns:
+        specifier: ^4.4.0
+        version: 4.4.0
       lucide-react:
         specifier: 1.70.0
         version: 1.70.0(@types/react@19.3.0)(react@19.3.1)
@@ -1810,6 +1813,9 @@ packages:
   d3-zoom@3.0.0:
     resolution: {integrity: sha512-b8AmV3kfQaqWAuacbPuNbL6vahnOJflOhexLzMMNLga62+/nh0JzvJ0aO/5a5MVgUFGS7Hu1P9P03o3fJkDCyw==}
     engines: {node: '>=12'}
+
+  date-fns@4.4.0:
+    resolution: {integrity: sha512-+1UMbeh68lH1SegH83CGWwpb6OHHbpSgr3+s5Eww5M4CAgswBpoWS0AjTOfEJ33HiYKz1hdj/KTFprzXHmq/6w==}
 
   debounce-fn@4.0.0:
     resolution: {integrity: sha512-8pYCQiL9Xdcg0UPSD3d+0KMlOjp+KGU5EPwYddgzQ7DATsg4fuUDjQtsYLmWjnk2obnNHgV3vE2Y4jejSOJVBQ==}
@@ -4419,6 +4425,8 @@ snapshots:
       d3-interpolate: 3.0.2
       d3-selection: 3.0.0
       d3-transition: 3.0.2(d3-selection@3.0.0)
+
+  date-fns@4.4.0: {}
 
   debounce-fn@4.0.0:
     dependencies:

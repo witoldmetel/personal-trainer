@@ -10,7 +10,7 @@ import {
 import { scaleBand } from '@tanstack/charts/scales/band'
 import { scaleLinear } from '@tanstack/charts/scales/linear'
 import { scaleUtc } from '@tanstack/charts/scales/time'
-import { formatChartDate } from '@/lib/dates'
+import { dateIso, formatChartDate } from '@/lib/dates'
 
 const PRIMARY = 'oklch(0.508 0.118 157.8)'
 const TREND = 'oklch(0.439 0 0)'
@@ -28,9 +28,7 @@ type BarRow = {
 }
 
 function formatTickDate(value: Date) {
-  return formatChartDate(
-    `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`,
-  )
+  return formatChartDate(dateIso(value))
 }
 
 function ChartFrame({

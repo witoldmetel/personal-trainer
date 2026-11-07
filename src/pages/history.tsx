@@ -15,7 +15,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { formatDate, isoDaysAgo, todayIso } from '@/lib/dates'
+import {
+  compareIso,
+  formatDate,
+  isIsoInRange,
+  isoDaysAgo,
+  todayIso,
+} from '@/lib/dates'
 import { useStore } from '@/lib/store'
 import { isFilledSet, type Session } from '@/lib/types'
 
@@ -39,7 +45,8 @@ export function HistoryPage() {
   const [preset, setPreset] = useState<RangePreset>('all')
   const [from, setFrom] = useState(() =>
     sessions.reduce(
-      (min, session) => (session.performedOn < min ? session.performedOn : min),
+      (min, session) =>
+        compareIso(session.performedOn, min) < 0 ? session.performedOn : min,
       todayIso(),
     ),
   )
@@ -49,7 +56,8 @@ export function HistoryPage() {
   const [page, setPage] = useState(1)
 
   const earliest = sessions.reduce(
-    (min, session) => (session.performedOn < min ? session.performedOn : min),
+    (min, session) =>
+      compareIso(session.performedOn, min) < 0 ? session.performedOn : min,
     todayIso(),
   )
 
@@ -94,7 +102,7 @@ export function HistoryPage() {
         if (!sessionSets.some((set) => set.sessionId === session.id && isFilledSet(set))) {
           return false
         }
-        if (session.performedOn < from || session.performedOn > to) return false
+        if (!isIsoInRange(session.performedOn, from, to)) return false
         if (
           dayIds.length > 0 &&
           (session.programDayId == null ||
@@ -107,13 +115,10 @@ export function HistoryPage() {
         }
         return true
       })
-      .sort((a, b) =>
-        a.performedOn === b.performedOn
-          ? a.id.localeCompare(b.id)
-          : a.performedOn < b.performedOn
-            ? 1
-            : -1,
-      )
+      .sort((a, b) => {
+        const byDate = compareIso(b.performedOn, a.performedOn)
+        return byDate !== 0 ? byDate : a.id.localeCompare(b.id)
+      })
   }, [sessions, sessionSets, from, to, dayIds, exerciseId])
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))

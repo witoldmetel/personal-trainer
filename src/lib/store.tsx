@@ -8,7 +8,14 @@ import {
 } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { formatLastTime, todayIso } from '@/lib/dates'
+import {
+  addDaysIso,
+  compareIso,
+  formatLastTime,
+  isIsoDate,
+  isSameIsoDay,
+  todayIso,
+} from '@/lib/dates'
 import {
   emptyGym,
   loadGym,
@@ -111,8 +118,8 @@ const StoreContext = createContext<StoreApi | null>(null)
 const GYM_KEY = ['gym'] as const
 
 function compareSessionRecency(a: Session, b: Session): number {
-  if (a.performedOn === b.performedOn) return a.id.localeCompare(b.id)
-  return a.performedOn < b.performedOn ? 1 : -1
+  const byDate = compareIso(b.performedOn, a.performedOn)
+  return byDate !== 0 ? byDate : a.id.localeCompare(b.id)
 }
 
 function toastPersist(error: unknown) {
@@ -156,7 +163,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const candidates = state.sessions
         .filter((s) => {
           if (s.id === beforeSessionId) return false
-          if (before && s.performedOn > before.performedOn) return false
+          if (before && compareIso(s.performedOn, before.performedOn) > 0) {
+            return false
+          }
           return true
         })
         .sort(compareSessionRecency)
@@ -238,7 +247,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       todaySession: () =>
         state.sessions.find(
           (s) =>
-            s.performedOn === todayIso() &&
+            isSameIsoDay(s.performedOn, todayIso()) &&
             (s.status === 'in_progress' || s.id.startsWith('live_')),
         ),
       sessionDay: (session) =>
@@ -287,7 +296,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         runPersist(() => persistSessionStatus(sessionId, 'done'))
       },
       updateSessionDate: (sessionId, performedOn) => {
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(performedOn)) return
+        if (!isIsoDate(performedOn)) return
+        const taken = state.sessions.some(
+          (session) =>
+            session.id !== sessionId &&
+            isSameIsoDay(session.performedOn, performedOn),
+        )
+        if (taken) {
+          toast.error('That date already has a session.')
+          return
+        }
         setGym((s) => ({
           ...s,
           sessions: s.sessions.map((session) =>
@@ -746,14 +764,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const [date, dayKey] = key.split('|')
           const day = ensureDay(group[0]?.dayName ?? dayKey)
           let session = sessions.find(
-            (ses) => ses.performedOn === date && ses.programDayId === day.id,
+            (ses) =>
+              isSameIsoDay(ses.performedOn, date) && ses.programDayId === day.id,
           )
           let created = false
           if (!session) {
+            let performedOn = date
+            while (
+              sessions.some((ses) => isSameIsoDay(ses.performedOn, performedOn))
+            ) {
+              performedOn = addDaysIso(performedOn, 1)
+            }
             session = {
               id: createId('ses'),
               programDayId: day.id,
-              performedOn: date,
+              performedOn,
               status: 'done',
             }
             created = true

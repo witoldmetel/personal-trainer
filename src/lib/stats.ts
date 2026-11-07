@@ -1,4 +1,4 @@
-import { dateIso, formatChartDate, parseIsoDate } from '@/lib/dates'
+import { compareIso, formatChartDate, isIsoInRange, parseIsoDate } from '@/lib/dates'
 import type { Exercise, ProgramDay, Session, SessionSet } from '@/lib/types'
 
 export type DashboardFilters = {
@@ -66,8 +66,7 @@ export function exerciseSessionPoints(input: {
   const dayName = new Map(programDays.map((d) => [d.id, d.name] as const))
   const matching = sessions
     .filter((session) => {
-      const on = dateIso(session.performedOn)
-      if (on < filters.from || on > filters.to) {
+      if (!isIsoInRange(session.performedOn, filters.from, filters.to)) {
         return false
       }
       if (
@@ -78,11 +77,10 @@ export function exerciseSessionPoints(input: {
       }
       return true
     })
-    .sort((a, b) =>
-      a.performedOn === b.performedOn
-        ? a.id.localeCompare(b.id)
-        : a.performedOn.localeCompare(b.performedOn),
-    )
+    .sort((a, b) => {
+      const byDate = compareIso(a.performedOn, b.performedOn)
+      return byDate !== 0 ? byDate : a.id.localeCompare(b.id)
+    })
 
   const points: ExerciseSessionPoint[] = []
   for (const session of matching) {
@@ -151,7 +149,7 @@ export function volumeBySession(points: ExerciseSessionPoint[]): VolumePoint[] {
       })
     }
   }
-  return [...byDate.values()].sort((a, b) => a.dateIso.localeCompare(b.dateIso))
+  return [...byDate.values()].sort((a, b) => compareIso(a.dateIso, b.dateIso))
 }
 
 export function volumeByDay(points: ExerciseSessionPoint[]): DayVolume[] {
@@ -173,7 +171,7 @@ export function progressRows(points: ExerciseSessionPoint[]): ProgressRow[] {
   }
   const rows: ProgressRow[] = []
   for (const group of byExercise.values()) {
-    const ordered = [...group].sort((a, b) => a.dateIso.localeCompare(b.dateIso))
+    const ordered = [...group].sort((a, b) => compareIso(a.dateIso, b.dateIso))
     const weighted = ordered.filter((point) => point.bestWeightKg > 0)
     const metric: ProgressRow['metric'] = weighted.length >= 2 ? 'weight' : 'reps'
     const series = metric === 'weight' ? weighted : ordered

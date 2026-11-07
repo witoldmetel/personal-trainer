@@ -18,7 +18,7 @@ import {
 } from '@/components/progress-ui'
 import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
-import { formatDate, isoDaysAgo, todayIso } from '@/lib/dates'
+import { compareIso, formatDate, isoDaysAgo, todayIso } from '@/lib/dates'
 import { useStore } from '@/lib/store'
 import { buildProgressView, formatPct } from '@/lib/stats'
 import { isFilledSet } from '@/lib/types'
@@ -89,13 +89,10 @@ export function DashboardPage() {
       sessionSets.some((set) => set.sessionId === row.id && isFilledSet(set)),
     )
     return [...withSets]
-      .sort((a, b) =>
-        a.performedOn === b.performedOn
-          ? a.id.localeCompare(b.id)
-          : a.performedOn < b.performedOn
-            ? 1
-            : -1,
-      )
+      .sort((a, b) => {
+        const byDate = compareIso(b.performedOn, a.performedOn)
+        return byDate !== 0 ? byDate : a.id.localeCompare(b.id)
+      })
       .slice(0, 4)
   }, [sessions, sessionSets])
 

@@ -46,14 +46,14 @@ type DialogKind =
   | { type: 'edit-day'; id: string; name: string }
   | { type: 'exercise' }
   | {
-      type: 'rename'
-      exerciseId: string
-      name: string
-      peId: string
-      sets: number
-      reps: number
-      usesWeight: boolean
-    }
+    type: 'rename'
+    exerciseId: string
+    name: string
+    peId: string
+    sets: number
+    reps: number
+    usesWeight: boolean
+  }
 
 type ConfirmKind =
   | { type: 'program'; id: string; name: string }
@@ -487,8 +487,9 @@ export function ProgramsPage() {
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
             <p className="max-w-xl text-xs text-muted-foreground">
-              Apply moves assigned days onto those weekdays in the same week.
-              Unassigned days keep their dates.
+              Apply puts each cycle in its own week: assigned days on those
+              weekdays, the rest on the remaining days. One session per calendar
+              day.
             </p>
             <Button
               size="sm"
@@ -618,13 +619,9 @@ export function ProgramsPage() {
             <DialogTitle>Update history dates?</DialogTitle>
             <DialogDescription>
               {weekdayPreview.changes.length} session
-              {weekdayPreview.changes.length === 1 ? '' : 's'} will move onto the
-              weekdays you set
-              {weekdaySummary ? ` (${weekdaySummary})` : ''}. Unassigned days keep
-              their dates.
-              {weekdayPreview.skipped > 0
-                ? ` ${weekdayPreview.skipped} will be skipped because that date is already taken.`
-                : ''}
+              {weekdayPreview.changes.length === 1 ? '' : 's'} will move
+              {weekdaySummary ? ` (${weekdaySummary})` : ''}. Each calendar day
+              keeps a single session.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -709,8 +706,8 @@ function EditorDialog({
     defaultValues: {
       name:
         dialog?.type === 'rename' ||
-        dialog?.type === 'edit-program' ||
-        dialog?.type === 'edit-day'
+          dialog?.type === 'edit-program' ||
+          dialog?.type === 'edit-day'
           ? dialog.name
           : '',
       targetSets: dialog?.type === 'rename' ? dialog.sets : 3,
