@@ -3,11 +3,14 @@ export type Program = {
   name: string
 }
 
+export type IsoWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7
+
 export type ProgramDay = {
   id: string
   programId: string
   name: string
   sortOrder: number
+  weekday: IsoWeekday | null
 }
 
 export type Exercise = {

@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx'
+import { addDaysIso, isoDaysAgo } from '@/lib/dates'
 import type { ProgramPlanDay } from '@/lib/types'
 
 export const APP_FIELDS = [
@@ -105,6 +106,16 @@ function parseDate(value: unknown): string | null {
   }
   const text = cellText(value)
   if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text
+  const dmy = text.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/)
+  if (dmy) {
+    const day = Number(dmy[1])
+    const month = Number(dmy[2])
+    let year = Number(dmy[3])
+    if (year < 100) year += 2000
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    }
+  }
   const n = parseNumber(text)
   if (n != null && n > 20000 && n < 60000) {
     const parsed = XLSX.SSF.parse_date_code(n)
@@ -115,6 +126,62 @@ function parseDate(value: unknown): string | null {
     }
   }
   return null
+}
+
+function daySheetIndex(name: string): number {
+  const match = name.match(/(\d+)/)
+  return match ? Number(match[1]) : 0
+}
+
+function atjDatesBySheet(
+  sheets: Array<{ name: string; grid: unknown[][] }>,
+): Map<string, string[]> {
+  const ordered = [...sheets].sort((a, b) => {
+    const diff = daySheetIndex(a.name) - daySheetIndex(b.name)
+    return diff !== 0 ? diff : a.name.localeCompare(b.name, 'en')
+  })
+  const nDays = Math.max(ordered.length, 1)
+  let lastCol = 3
+  for (const sheet of ordered) {
+    for (const row of sheet.grid) lastCol = Math.max(lastCol, row.length - 1)
+  }
+
+  const day1Dates: Array<string | null> = Array.from(
+    { length: lastCol + 1 },
+    () => null,
+  )
+  const day1Grid = ordered[0]?.grid ?? []
+  for (const row of day1Grid) {
+    for (let col = 3; col <= lastCol; col++) {
+      if (day1Dates[col]) continue
+      const parsed = parseDate(row[col])
+      if (parsed) day1Dates[col] = parsed
+    }
+  }
+  const known: Array<[number, string]> = []
+  for (let col = 3; col <= lastCol; col++) {
+    if (day1Dates[col]) known.push([col, day1Dates[col] as string])
+  }
+  for (let col = 3; col <= lastCol; col++) {
+    if (day1Dates[col]) continue
+    const prev = [...known].reverse().find(([c]) => c < col)
+    const next = known.find(([c]) => c > col)
+    if (prev) day1Dates[col] = addDaysIso(prev[1], (col - prev[0]) * nDays)
+    else if (next) day1Dates[col] = addDaysIso(next[1], (col - next[0]) * nDays)
+  }
+
+  const result = new Map<string, string[]>()
+  for (let dayIndex = 0; dayIndex < ordered.length; dayIndex++) {
+    const dates: string[] = Array.from({ length: lastCol + 1 }, () => '')
+    for (let col = 3; col <= lastCol; col++) {
+      const cycleIndex = lastCol - col
+      const day1 =
+        day1Dates[col] ?? isoDaysAgo(cycleIndex * nDays + (nDays - 1))
+      dates[col] = addDaysIso(day1, dayIndex)
+    }
+    result.set(ordered[dayIndex].name, dates)
+  }
+  return result
 }
 
 function guessHeader(headers: string[], aliases: string[]): string | undefined {
@@ -155,12 +222,12 @@ function columnWeight(headerRow: unknown[], col: number): number | null {
 function parseAtjSheet(
   rows: unknown[][],
   dayName: string,
+  sessionDates: string[],
 ): { sets: MappedSet[]; plan: ProgramPlanDay } {
   const out: MappedSet[] = []
   const planExercises: ProgramPlanDay['exercises'] = []
   let exercise = ''
   let headerRow: unknown[] = []
-  let sessionDates: string[] = []
 
   for (const row of rows) {
     const a = cellText(row[0])
@@ -185,18 +252,6 @@ function parseAtjSheet(
         })
       }
       headerRow = row
-      const lastCol = Math.max(row.length - 1, 2)
-      sessionDates = Array.from({ length: lastCol + 1 }, (_, col) => {
-        if (col < 2) return ''
-        const d = new Date()
-        d.setHours(12, 0, 0, 0)
-        const age = col === 2 ? 0 : lastCol - col + 1
-        d.setDate(d.getDate() - age * 3)
-        const y = d.getFullYear()
-        const m = String(d.getMonth() + 1).padStart(2, '0')
-        const day = String(d.getDate()).padStart(2, '0')
-        return `${y}-${m}-${day}`
-      })
       continue
     }
     const setNumber = parseSetLabel(a)
@@ -294,21 +349,25 @@ export function parseWorkbook(fileName: string, data: ArrayBuffer): ParsedSpread
   })
 
   if (atjSheets.length > 0) {
-    const parsedSheets = atjSheets.map((name) => {
+    const grids = atjSheets.map((name) => {
       const grid = XLSX.utils.sheet_to_json(workbook.Sheets[name], {
         header: 1,
         defval: '',
         raw: true,
       }) as unknown[][]
-      return parseAtjSheet(grid, name)
+      return { name, grid }
     })
+    const datesBySheet = atjDatesBySheet(grids)
+    const parsedSheets = grids.map((sheet) =>
+      parseAtjSheet(sheet.grid, sheet.name, datesBySheet.get(sheet.name) ?? []),
+    )
     const allRows = parsedSheets.flatMap((sheet) => sheet.sets)
     const planDays = parsedSheets.map((sheet) => sheet.plan)
     if (allRows.length === 0) {
       warnings.push('Average To Jacked layout detected, but no set cells could be read.')
     } else {
       warnings.push(
-        'Average To Jacked sheet: dates are estimated (every 3 days). Weight is taken from the kg band above each column.',
+        'Average To Jacked: Day 1, Day 2, Day 3… of the same column are consecutive calendar days (one session per day). Each column is the next cycle.',
       )
     }
     return {

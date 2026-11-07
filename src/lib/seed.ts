@@ -12,10 +12,10 @@ import type {
 const programs: Program[] = [{ id: 'prog_home', name: 'Home routine' }]
 
 const programDays: ProgramDay[] = [
-  { id: 'day_1', programId: 'prog_home', name: 'Day 1', sortOrder: 0 },
-  { id: 'day_2', programId: 'prog_home', name: 'Day 2', sortOrder: 1 },
-  { id: 'day_3', programId: 'prog_home', name: 'Day 3', sortOrder: 2 },
-  { id: 'day_4', programId: 'prog_home', name: 'Day 4', sortOrder: 3 },
+  { id: 'day_1', programId: 'prog_home', name: 'Day 1', sortOrder: 0, weekday: null },
+  { id: 'day_2', programId: 'prog_home', name: 'Day 2', sortOrder: 1, weekday: null },
+  { id: 'day_3', programId: 'prog_home', name: 'Day 3', sortOrder: 2, weekday: null },
+  { id: 'day_4', programId: 'prog_home', name: 'Day 4', sortOrder: 3, weekday: null },
 ]
 
 const exercises: Exercise[] = [

@@ -383,7 +383,7 @@ function HistoryDetail({
   sessionId: string
   onDelete: (session: Session) => void
 }) {
-  const { sessions, sessionDay } = useStore()
+  const { sessions, sessionDay, updateSessionDate } = useStore()
   const session = sessions.find((s) => s.id === sessionId)
 
   if (!session) {
@@ -413,19 +413,30 @@ function HistoryDetail({
         </Link>
       </Button>
       <PageHeader
-        title={`${day?.name ?? 'Session'} · ${formatDate(session.performedOn)}`}
+        title={day?.name ?? 'Session'}
         subtitle="Edits save to this session."
         actions={
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={() => onDelete(session)}
-          >
-            <Trash2 className="size-4" />
-            Delete
-          </Button>
+          <>
+            <Input
+              type="date"
+              value={session.performedOn}
+              max={todayIso()}
+              className="h-8 w-36 num"
+              onChange={(e) => {
+                if (e.target.value) updateSessionDate(session.id, e.target.value)
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => onDelete(session)}
+            >
+              <Trash2 className="size-4" />
+              Delete
+            </Button>
+          </>
         }
       />
       <SetLogger sessionId={session.id} />

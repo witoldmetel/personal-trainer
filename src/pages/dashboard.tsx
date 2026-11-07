@@ -179,7 +179,7 @@ export function DashboardPage() {
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[3fr_2fr]">
-        <ChartCard title="Session volume (kg)">
+        <ChartCard title="Session volume (kg) · last 90 days">
           <CategoryBarChart
             rows={volumeRows}
             ariaLabel="Session volume over the last 90 days"
@@ -189,6 +189,9 @@ export function DashboardPage() {
         <div className="overflow-hidden rounded-lg border bg-card">
           <div className="border-b px-4 py-3">
             <h2 className="text-sm font-semibold">Top movers</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              First vs last in the last 90 days.
+            </p>
           </div>
           {topMovers.length === 0 ? (
             <p className="px-4 py-6 text-sm text-muted-foreground">

@@ -1,4 +1,4 @@
-import { formatChartDate, parseIsoDate } from '@/lib/dates'
+import { dateIso, formatChartDate, parseIsoDate } from '@/lib/dates'
 import type { Exercise, ProgramDay, Session, SessionSet } from '@/lib/types'
 
 export type DashboardFilters = {
@@ -66,7 +66,8 @@ export function exerciseSessionPoints(input: {
   const dayName = new Map(programDays.map((d) => [d.id, d.name] as const))
   const matching = sessions
     .filter((session) => {
-      if (session.performedOn < filters.from || session.performedOn > filters.to) {
+      const on = dateIso(session.performedOn)
+      if (on < filters.from || on > filters.to) {
         return false
       }
       if (

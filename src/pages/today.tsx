@@ -5,6 +5,7 @@ import { Check, Play, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/page-header'
 import { SetLogger } from '@/components/set-logger'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
@@ -14,6 +15,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { formatDate, todayIso } from '@/lib/dates'
+import { weekdayShort } from '@/lib/schedule'
 import { useStore } from '@/lib/store'
 import { isFilledSet } from '@/lib/types'
 
@@ -27,6 +29,7 @@ export function TodayPage() {
     startSession,
     markSessionDone,
     removeSession,
+    updateSessionDate,
   } = useStore()
   const session = todaySession()
   const [dayId, setDayId] = useState(programDays[0]?.id ?? '')
@@ -71,6 +74,9 @@ export function TodayPage() {
             {days.map((day) => (
               <option key={day.id} value={day.id}>
                 {day.name}
+                {weekdayShort(day.weekday)
+                  ? ` · ${weekdayShort(day.weekday)}`
+                  : ''}
               </option>
             ))}
           </select>
@@ -106,10 +112,19 @@ export function TodayPage() {
   return (
     <div>
       <PageHeader
-        title={`${day?.name ?? 'Session'} · ${formatDate(todayIso())}`}
+        title={day?.name ?? 'Session'}
         subtitle="Tab between cells · Enter moves down"
         actions={
           <>
+            <Input
+              type="date"
+              value={session.performedOn}
+              max={todayIso()}
+              className="h-8 w-36 num"
+              onChange={(e) => {
+                if (e.target.value) updateSessionDate(session.id, e.target.value)
+              }}
+            />
             {session.status === 'in_progress' ? (
               <Button
                 disabled={!hasFilledSet}

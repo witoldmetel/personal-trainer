@@ -14,6 +14,7 @@ import {
   loadGym,
   persistDay,
   persistDayOrder,
+  persistDayWeekday,
   persistExercise,
   persistImport,
   persistProgram,
@@ -28,12 +29,16 @@ import {
   persistRenameExercise,
   persistRenameProgram,
   persistSession,
+  persistSessionDate,
+  persistSessionDates,
   persistSessionStatus,
   persistSetPatch,
   persistSets,
 } from '@/lib/gym'
 import { createId } from '@/lib/ids'
+import { previewWeekdayHistory } from '@/lib/schedule'
 import type {
+  IsoWeekday,
   LoggerRow,
   ProgramDay,
   ProgramExercise,
@@ -49,6 +54,7 @@ type StoreApi = StoreState & {
   lastTimeFor: (exerciseId: string, beforeSessionId?: string) => string | null
   startSession: (programDayId: string) => string
   markSessionDone: (sessionId: string) => void
+  updateSessionDate: (sessionId: string, performedOn: string) => void
   updateSet: (
     setId: string,
     patch: { reps?: number | null; weightKg?: number | null },
@@ -60,6 +66,11 @@ type StoreApi = StoreState & {
   removeProgram: (programId: string) => void
   addDay: (programId: string, name: string) => string
   renameDay: (dayId: string, name: string) => void
+  setDayWeekday: (dayId: string, weekday: IsoWeekday | null) => void
+  applyProgramWeekdays: (programId: string) => {
+    updated: number
+    skipped: number
+  }
   removeDay: (dayId: string) => void
   addExerciseToDay: (input: {
     programDayId: string
@@ -272,6 +283,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }))
         runPersist(() => persistSessionStatus(sessionId, 'done'))
       },
+      updateSessionDate: (sessionId, performedOn) => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(performedOn)) return
+        setGym((s) => ({
+          ...s,
+          sessions: s.sessions.map((session) =>
+            session.id === sessionId
+              ? { ...session, performedOn }
+              : session,
+          ),
+        }))
+        runPersist(() => persistSessionDate(sessionId, performedOn))
+      },
       updateSet: (setId, patch) => {
         setGym((s) => ({
           ...s,
@@ -361,7 +384,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const id = createId('day')
         const sortOrder = state.programDays.filter((d) => d.programId === programId)
           .length
-        const day: ProgramDay = { id, programId, name, sortOrder }
+        const day: ProgramDay = {
+          id,
+          programId,
+          name,
+          sortOrder,
+          weekday: null,
+        }
         setGym((s) => ({ ...s, programDays: [...s.programDays, day] }))
         runPersist(() => persistDay(day))
         return id
@@ -376,6 +405,41 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ),
         }))
         runPersist(() => persistRenameDay(dayId, trimmed))
+      },
+      setDayWeekday: (dayId, weekday) => {
+        setGym((s) => ({
+          ...s,
+          programDays: s.programDays.map((day) =>
+            day.id === dayId ? { ...day, weekday } : day,
+          ),
+        }))
+        runPersist(() => persistDayWeekday(dayId, weekday))
+      },
+      applyProgramWeekdays: (programId) => {
+        const days = state.programDays.filter((day) => day.programId === programId)
+        const preview = previewWeekdayHistory(state.sessions, days)
+        if (preview.changes.length === 0) {
+          return { updated: 0, skipped: preview.skipped }
+        }
+        const nextDates = new Map(
+          preview.changes.map((change) => [change.sessionId, change.to]),
+        )
+        setGym((s) => ({
+          ...s,
+          sessions: s.sessions.map((session) => {
+            const performedOn = nextDates.get(session.id)
+            return performedOn ? { ...session, performedOn } : session
+          }),
+        }))
+        runPersist(() =>
+          persistSessionDates(
+            preview.changes.map((change) => ({
+              id: change.sessionId,
+              performedOn: change.to,
+            })),
+          ),
+        )
+        return { updated: preview.changes.length, skipped: preview.skipped }
       },
       removeDay: (dayId) => {
         const target = state.programDays.find((day) => day.id === dayId)
@@ -560,6 +624,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             name,
             sortOrder: programDays.filter((d) => d.programId === program.id)
               .length,
+            weekday: null,
           }
           programDays.push(day)
           dayByKey.set(key, day)

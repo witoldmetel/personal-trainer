@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useForm } from '@tanstack/react-form'
 import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -13,7 +14,21 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
+import {
+  WEEKDAYS,
+  parseIsoWeekday,
+  previewWeekdayHistory,
+  weekdayLabel,
+  weekdayShort,
+} from '@/lib/schedule'
 import { useStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
@@ -51,8 +66,11 @@ export function ProgramsPage() {
     addProgram,
     renameProgram,
     removeProgram,
+    sessions,
     addDay,
     renameDay,
+    setDayWeekday,
+    applyProgramWeekdays,
     removeDay,
     addExerciseToDay,
     renameExercise,
@@ -66,6 +84,7 @@ export function ProgramsPage() {
   )
   const [dialog, setDialog] = useState<DialogKind | null>(null)
   const [confirm, setConfirm] = useState<ConfirmKind | null>(null)
+  const [applyOpen, setApplyOpen] = useState(false)
 
   const days = useMemo(
     () =>
@@ -84,6 +103,14 @@ export function ProgramsPage() {
 
   const selectedProgram = programs.find((p) => p.id === programId)
   const selectedDay = days.find((d) => d.id === dayId)
+  const weekdayPreview = useMemo(
+    () => previewWeekdayHistory(sessions, days),
+    [sessions, days],
+  )
+  const weekdaySummary = days
+    .filter((day) => day.weekday != null)
+    .map((day) => `${day.name} → ${weekdayLabel(day.weekday)}`)
+    .join(', ')
 
   return (
     <div>
@@ -225,6 +252,11 @@ export function ProgramsPage() {
                         {index + 1}
                       </span>
                       {day.name}
+                      {weekdayShort(day.weekday) ? (
+                        <span className="ml-2 text-xs font-normal text-muted-foreground">
+                          {weekdayShort(day.weekday)}
+                        </span>
+                      ) : null}
                       <span className="ml-2 text-xs font-normal text-muted-foreground num">
                         {
                           programExercises.filter(
@@ -374,6 +406,87 @@ export function ProgramsPage() {
         </div>
       )}
 
+      {programs.length > 0 && days.length > 0 ? (
+        <section className="mt-4 rounded-lg border bg-card">
+          <div className="border-b px-4 py-2.5">
+            <span className="eyebrow">Weekdays</span>
+            {selectedProgram ? (
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                · {selectedProgram.name}
+              </span>
+            ) : null}
+          </div>
+          <div className="grid gap-3 p-4 sm:grid-cols-2">
+            <p className="text-sm text-muted-foreground sm:col-span-2">
+              If you always train a program day on the same weekday, set it here.
+              Leave the rest unset. History dates stay as they are until you
+              apply.
+            </p>
+            {days.map((day) => {
+              const taken = new Set(
+                days
+                  .filter((other) => other.id !== day.id && other.weekday != null)
+                  .map((other) => other.weekday),
+              )
+              return (
+                <div
+                  key={day.id}
+                  className="flex items-center justify-between gap-3"
+                >
+                  <Label
+                    htmlFor={`weekday-${day.id}`}
+                    className="min-w-0 truncate font-medium"
+                  >
+                    {day.name}
+                  </Label>
+                  <Select
+                    value={day.weekday == null ? 'none' : String(day.weekday)}
+                    onValueChange={(value) =>
+                      setDayWeekday(day.id, parseIsoWeekday(value))
+                    }
+                  >
+                    <SelectTrigger
+                      id={`weekday-${day.id}`}
+                      size="sm"
+                      className="w-40"
+                    >
+                      <SelectValue placeholder="Not set" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Not set</SelectItem>
+                      {WEEKDAYS.map((weekday) => (
+                        <SelectItem
+                          key={weekday.value}
+                          value={String(weekday.value)}
+                          disabled={taken.has(weekday.value)}
+                        >
+                          {weekday.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )
+            })}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
+            <p className="max-w-xl text-xs text-muted-foreground">
+              Apply moves assigned days onto those weekdays in the same week.
+              Unassigned days keep their dates.
+            </p>
+            <Button
+              size="sm"
+              disabled={weekdayPreview.changes.length === 0}
+              onClick={() => setApplyOpen(true)}
+            >
+              {weekdayPreview.changes.length > 0
+                ? `Update ${weekdayPreview.changes.length} history sessions`
+                : 'Update history'}
+            </Button>
+          </div>
+        </section>
+      ) : null}
+
       <EditorDialog
         key={
           dialog
@@ -448,6 +561,51 @@ export function ProgramsPage() {
               }}
             >
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={applyOpen} onOpenChange={setApplyOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Update history dates?</DialogTitle>
+            <DialogDescription>
+              {weekdayPreview.changes.length} session
+              {weekdayPreview.changes.length === 1 ? '' : 's'} will move onto the
+              weekdays you set
+              {weekdaySummary ? ` (${weekdaySummary})` : ''}. Unassigned days keep
+              their dates.
+              {weekdayPreview.skipped > 0
+                ? ` ${weekdayPreview.skipped} will be skipped because that date is already taken.`
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setApplyOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                const result = applyProgramWeekdays(programId)
+                setApplyOpen(false)
+                if (result.updated === 0) {
+                  toast.message('No history dates changed.')
+                  return
+                }
+                toast.success(
+                  result.skipped > 0
+                    ? `Updated ${result.updated} sessions. ${result.skipped} skipped.`
+                    : `Updated ${result.updated} history sessions.`,
+                )
+              }}
+            >
+              Update history
             </Button>
           </DialogFooter>
         </DialogContent>

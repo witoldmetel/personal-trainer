@@ -1,4 +1,5 @@
 import { createId } from '@/lib/ids'
+import { parseIsoWeekday } from '@/lib/schedule'
 import { supabase } from '@/lib/supabase'
 import {
   isFilledSet,
@@ -27,6 +28,7 @@ type ProgramDayRow = {
   program_id: string
   name: string
   sort_order: number
+  weekday?: number | null
 }
 type ExerciseRow = { id: string; name: string; muscle_group: string | null }
 type ProgramExerciseRow = {
@@ -72,9 +74,19 @@ function isUnknownUsesWeight(message: string): boolean {
   return /uses_weight/i.test(message)
 }
 
+function isUnknownWeekday(message: string): boolean {
+  return /weekday/i.test(message)
+}
+
 function withoutUsesWeight<T extends object>(row: T): Omit<T, 'uses_weight'> {
   const next = { ...row } as T & { uses_weight?: unknown }
   delete next.uses_weight
+  return next
+}
+
+function withoutWeekday<T extends object>(row: T): Omit<T, 'weekday'> {
+  const next = { ...row } as T & { weekday?: unknown }
+  delete next.weekday
   return next
 }
 
@@ -89,7 +101,7 @@ export async function loadGym(): Promise<StoreState> {
     sessionSets,
   ] = await Promise.all([
     db.from('programs').select('id, name'),
-    db.from('program_days').select('id, program_id, name, sort_order'),
+    db.from('program_days').select('id, program_id, name, sort_order, weekday'),
     db.from('exercises').select('id, name, muscle_group'),
     db
       .from('program_exercises')
@@ -102,6 +114,13 @@ export async function loadGym(): Promise<StoreState> {
       .select('id, session_id, exercise_id, set_number, reps, weight_kg'),
   ])
 
+  let daysResult = programDays
+  if (daysResult.error && isUnknownWeekday(daysResult.error.message)) {
+    daysResult = await db
+      .from('program_days')
+      .select('id, program_id, name, sort_order')
+  }
+
   let peResult = programExercises
   if (peResult.error && /uses_weight/i.test(peResult.error.message)) {
     peResult = await db
@@ -113,7 +132,7 @@ export async function loadGym(): Promise<StoreState> {
 
   for (const result of [
     programs,
-    programDays,
+    daysResult,
     exercises,
     peResult,
     sessions,
@@ -127,11 +146,12 @@ export async function loadGym(): Promise<StoreState> {
       id: row.id,
       name: row.name,
     })),
-    programDays: ((programDays.data ?? []) as ProgramDayRow[]).map((row) => ({
+    programDays: ((daysResult.data ?? []) as ProgramDayRow[]).map((row) => ({
       id: row.id,
       programId: row.program_id,
       name: row.name,
       sortOrder: row.sort_order,
+      weekday: parseIsoWeekday(row.weekday),
     })),
     exercises: ((exercises.data ?? []) as ExerciseRow[]).map((row) => ({
       id: row.id,
@@ -152,7 +172,7 @@ export async function loadGym(): Promise<StoreState> {
     sessions: ((sessions.data ?? []) as SessionRow[]).map((row) => ({
       id: row.id,
       programDayId: row.program_day_id,
-      performedOn: row.performed_on,
+      performedOn: row.performed_on.slice(0, 10),
       status: row.status,
     })),
     sessionSets: ((sessionSets.data ?? []) as SessionSetRow[]).map((row) => ({
@@ -302,6 +322,15 @@ async function insertChunked(table: string, rows: object[]) {
       await throwIfError(error)
       continue
     }
+    if (
+      table === 'program_days' &&
+      first.error &&
+      isUnknownWeekday(first.error.message)
+    ) {
+      const { error } = await db.from(table).insert(chunk.map(withoutWeekday))
+      await throwIfError(error)
+      continue
+    }
     await throwIfError(first.error)
   }
 }
@@ -333,16 +362,43 @@ export async function persistProgram(program: Program) {
 
 export async function persistDay(day: ProgramDay) {
   const uid = await userId()
-  const { error } = await client()
-    .from('program_days')
-    .insert({
+  await insertChunked('program_days', [
+    {
       id: day.id,
       user_id: uid,
       program_id: day.programId,
       name: day.name,
       sort_order: day.sortOrder,
-    })
-  await throwIfError(error)
+      weekday: day.weekday,
+    },
+  ])
+}
+
+export async function persistDayWeekday(
+  id: string,
+  weekday: ProgramDay['weekday'],
+) {
+  const db = client()
+  const first = await db.from('program_days').update({ weekday }).eq('id', id)
+  if (first.error && isUnknownWeekday(first.error.message)) {
+    throw new Error(
+      'Run the program day weekday migration in Supabase, then try again.',
+    )
+  }
+  await throwIfError(first.error)
+}
+
+export async function persistSessionDates(
+  updates: Array<{ id: string; performedOn: string }>,
+) {
+  const db = client()
+  for (const row of updates) {
+    const { error } = await db
+      .from('sessions')
+      .update({ performed_on: row.performedOn })
+      .eq('id', row.id)
+    await throwIfError(error)
+  }
 }
 
 export async function persistRenameProgram(id: string, name: string) {
@@ -445,6 +501,14 @@ export async function persistSessionStatus(sessionId: string, status: SessionSta
   const { error } = await client()
     .from('sessions')
     .update({ status })
+    .eq('id', sessionId)
+  await throwIfError(error)
+}
+
+export async function persistSessionDate(sessionId: string, performedOn: string) {
+  const { error } = await client()
+    .from('sessions')
+    .update({ performed_on: performedOn })
     .eq('id', sessionId)
   await throwIfError(error)
 }
@@ -552,6 +616,7 @@ export async function persistImport(next: StoreState, previous: StoreState) {
         program_id: row.programId,
         name: row.name,
         sort_order: row.sortOrder,
+        weekday: row.weekday,
       })),
   )
   await insertChunked(
