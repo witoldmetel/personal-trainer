@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { Check, Play, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/page-header'

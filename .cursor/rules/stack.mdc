@@ -8,7 +8,7 @@ alwaysApply: true
 - Package manager: pnpm. Do not add package-lock.json or use npm/yarn for installs.
 - UI: [shadcn/ui](https://ui.shadcn.com/) + Tailwind. Add components with `pnpm dlx shadcn@latest add`. Put them in `src/components/ui`. Do not add MUI, Chakra, Ant, Daisy, or a second button/input kit.
 - Lint and format: [Biome](https://biomejs.dev/). Config is `biome.json`. Do not add ESLint, Prettier, or oxlint.
-- App direction: TanStack Start (Router, Query, Table, Form, Charts). Current scaffold is Vite + React Router; do not add Next.js.
+- App direction: TanStack Start (Router, Query, Table, Form, Charts). Current app is a Vite SPA with TanStack Router file routes; do not add Next.js or React Router.
 - Data: Supabase Postgres + Auth + RLS. Excel import uses SheetJS (`xlsx`).
 - Dates: [date-fns](https://date-fns.org/). Calendar values are ISO `yyyy-MM-dd`. One session per calendar day. Do not add moment, dayjs, or luxon.
 - Motion: [Motion](https://motion.dev/) (`motion/react`). Use `Reorder` for list drag-and-drop. Honor `useReducedMotion`. Do not add Framer Motion as a second package or `@dnd-kit`.

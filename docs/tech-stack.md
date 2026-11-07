@@ -7,7 +7,7 @@ This is the decision record for how the product is built. It exists so later pha
 
 **Constraints that drove the stack:** $0, hosted URL, GitHub login, SQL (spreadsheet-shaped data), desktop-quality tables, phone as a second client, **TanStack as the application layer**.
 
-**Current vs destination:** the clickable UI is a Vite + React Router SPA. Programs, sessions, and sets live in **Supabase Postgres**. Destination remains **TanStack Start** on Cloudflare Workers + Supabase. Do not treat the SPA as the long-term app shell.
+**Current vs destination:** the clickable UI is a Vite SPA with **TanStack Router** file routes. Programs, sessions, and sets live in **Supabase Postgres**. Destination remains **TanStack Start** on Cloudflare Workers + Supabase (SSR, server functions). Do not treat the SPA as the long-term app shell.
 
 ---
 
@@ -17,7 +17,7 @@ This is the decision record for how the product is built. It exists so later pha
 |---|---|---|
 | Package manager | **pnpm** | Lockfile is `pnpm-lock.yaml`. Do not use npm or yarn. |
 | App | **TanStack Start** (React + TypeScript) | Full-stack Vite framework: type-safe routing, SSR, server functions. Official Cloudflare path. |
-| Router | **TanStack Router** | Comes with Start; file routes, typed search params, loaders |
+| Router | **TanStack Router** | File routes in the Vite SPA now; same convention Start uses. Typed `to` / `params`. |
 | Server state | **TanStack Query** | Cache, mutations, optimistic set logging |
 | Tables | **TanStack Table** | Spreadsheet-like session logger on desktop |
 | Forms | **TanStack Form** | Program / exercise editors with typed fields |
@@ -58,13 +58,13 @@ flowchart TB
 | Charts | 1 (dashboard + `/charts`) | Volume, load, estimated 1RM — `defineChart` + React `Chart` |
 | Virtual | later, only if needed | Long history lists; do not add in v1 |
 
-Do not add Next.js, a second chart library, moment/dayjs/luxon, Framer Motion as a second package, or `@dnd-kit`. React Router is only in the current Vite scaffold; drop it when migrating to Start. If a TanStack library covers the job, use it.
+Do not add Next.js, React Router, a second chart library, moment/dayjs/luxon, Framer Motion as a second package, or `@dnd-kit`. If a TanStack library covers the job, use it.
 
 ## 3. Why these, not the alternatives
 
-### Why TanStack Start instead of a Vite SPA + React Router
+### Why TanStack Start instead of staying a Vite SPA
 
-The owner prefers TanStack. Start is Router plus the pieces this app will actually need: typed routes, loaders, and **server functions** (Excel batch import helpers, GitHub allowlist checks, phase 4 AI so the API key stays on the server). A SPA would force a later migration.
+The SPA already uses TanStack Router file routes. Start is the rest of that stack: SSR, server functions (Excel batch import helpers, GitHub allowlist checks, phase 4 AI so the API key stays on the server). Staying a SPA forever would still force a later migration for those pieces.
 
 SSR of public marketing pages is irrelevant. SSR of the app shell is fine. React Server Components are **not** required; keep Query + client components for the logger.
 
@@ -247,7 +247,7 @@ Charts and diet only **read** (or add adjacent tables to) the Phase 1 model. The
 - Native iOS / Android
 - Paid hosting, paid auth, paid analytics
 - Google Sheets as a live backend
-- Next.js, Remix (React Router only until the Start migration)
+- Next.js, Remix, React Router
 - Recharts / Chart.js / other chart kits
 - moment, dayjs, luxon (date-fns only)
 - Framer Motion as a second package, `@dnd-kit` (Motion `Reorder` only)
@@ -261,7 +261,7 @@ Charts and diet only **read** (or add adjacent tables to) the Phase 1 model. The
 
 ## 12. Repo layout
 
-Current scaffold (Vite SPA). `wrangler.jsonc` and `supabase/migrations/` are already in the repo. Start migration will replace `src/pages` + React Router with `src/routes`.
+Current scaffold (Vite SPA + TanStack Router). `wrangler.jsonc` and `supabase/migrations/` are already in the repo. Start migration keeps `src/routes` and adds the server entry.
 
 ```
 docs/prd.md
@@ -276,6 +276,8 @@ supabase/migrations/
 biome.json
 components.json
 src/
+  routes/              # TanStack file routes (__root, login, _authenticated/*)
+  routeTree.gen.ts     # generated; commit this file
   pages/               # dashboard, today, programs, history, charts, import
   components/
     ui/                # shadcn/ui primitives

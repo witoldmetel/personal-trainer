@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from '@tanstack/react-router'
 import {
   ArrowRight,
   ChartLine,
@@ -198,22 +198,23 @@ export function DashboardPage() {
               Log at least two sessions to see progress.
             </p>
           ) : (
-            <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full table-fixed text-sm">
               <thead className="bg-muted/60 text-left">
                 <tr>
                   <th className="eyebrow px-4 py-2">Exercise</th>
-                  <th className="eyebrow px-3 py-2">First</th>
-                  <th className="eyebrow px-3 py-2">Last</th>
-                  <th className="eyebrow px-3 py-2">Change</th>
-                  <th className="eyebrow px-3 py-2">Trend</th>
+                  <th className="eyebrow w-20 px-3 py-2">First</th>
+                  <th className="eyebrow w-20 px-3 py-2">Last</th>
+                  <th className="eyebrow w-32 px-3 py-2">Change</th>
+                  <th className="eyebrow w-28 px-3 py-2">Trend</th>
                 </tr>
               </thead>
               <tbody>
                 {topMovers.map((row) => (
                   <tr key={row.exerciseId} className="border-t">
-                    <td className="px-4 py-2 align-middle font-medium">
-                      {row.exerciseName}
+                    <td className="max-w-0 px-4 py-2 align-middle font-medium">
+                      <span className="line-clamp-2" title={row.exerciseName}>
+                        {row.exerciseName}
+                      </span>
                     </td>
                     <td className="px-3 py-2 align-middle text-muted-foreground num whitespace-nowrap">
                       {describePoint(row.first, row.metric)}
@@ -231,18 +232,19 @@ export function DashboardPage() {
                 ))}
               </tbody>
             </table>
-            </div>
           )}
         </FadeIn>
       </div>
 
       <FadeIn delay={0.16} className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-        {[
-          { to: '/programs', label: 'Programs', icon: LayoutList },
-          { to: '/history', label: 'History', icon: History },
-          { to: '/charts', label: 'Charts', icon: ChartLine },
-          { to: '/import', label: 'Import', icon: Upload },
-        ].map((item) => (
+        {(
+          [
+            { to: '/programs', label: 'Programs', icon: LayoutList },
+            { to: '/history', label: 'History', icon: History },
+            { to: '/charts', label: 'Charts', icon: ChartLine },
+            { to: '/import', label: 'Import', icon: Upload },
+          ] as const
+        ).map((item) => (
           <Link
             key={item.to}
             to={item.to}
@@ -279,7 +281,8 @@ export function DashboardPage() {
               return (
                 <Link
                   key={row.id}
-                  to={`/history/${row.id}`}
+                  to="/history/$sessionId"
+                  params={{ sessionId: row.id }}
                   className="flex items-center gap-4 px-4 py-2.5 hover:bg-muted/50"
                 >
                   <span className="w-36 text-sm font-medium num">

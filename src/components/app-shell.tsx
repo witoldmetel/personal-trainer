@@ -1,4 +1,5 @@
-import { NavLink, useLocation, useOutlet } from 'react-router-dom'
+import type { ReactNode } from 'react'
+import { Link, useRouterState } from '@tanstack/react-router'
 import { motion, useReducedMotion } from 'motion/react'
 import {
   CalendarDays,
@@ -13,7 +14,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/lib/auth'
 import { formatDate, todayIso } from '@/lib/dates'
-import { cn } from '@/lib/utils'
 
 const nav = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -22,28 +22,12 @@ const nav = [
   { to: '/history', label: 'History', icon: History },
   { to: '/charts', label: 'Charts', icon: ChartLine },
   { to: '/import', label: 'Import', icon: Upload },
-]
+] as const
 
-function AnimatedOutlet() {
-  const location = useLocation()
-  const outlet = useOutlet()
-  const reduce = useReducedMotion()
-  return (
-    <motion.div
-      key={location.pathname}
-      initial={reduce ? false : { opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={
-        reduce ? { duration: 0 } : { duration: 0.2, ease: [0.22, 1, 0.36, 1] }
-      }
-    >
-      {outlet}
-    </motion.div>
-  )
-}
-
-export function AppShell() {
+export function AppShell({ children }: { children: ReactNode }) {
   const { username, signOut } = useAuth()
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const reduce = useReducedMotion()
 
   return (
     <div className="flex min-h-svh bg-background text-foreground">
@@ -58,20 +42,18 @@ export function AppShell() {
         </div>
         <nav className="flex flex-col gap-0.5 px-2 py-2">
           {nav.map((item) => (
-            <NavLink
+            <Link
               key={item.to}
               to={item.to}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent/60',
-                  isActive &&
-                    'bg-sidebar-accent font-medium text-sidebar-accent-foreground',
-                )
-              }
+              className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent/60"
+              activeProps={{
+                className:
+                  'bg-sidebar-accent font-medium text-sidebar-accent-foreground',
+              }}
             >
               <item.icon className="size-4" />
               {item.label}
-            </NavLink>
+            </Link>
           ))}
         </nav>
       </aside>
@@ -97,25 +79,32 @@ export function AppShell() {
           </div>
         </header>
         <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 pt-6 pb-24 md:px-8 md:pb-10">
-          <AnimatedOutlet />
+          <motion.div
+            key={pathname}
+            initial={reduce ? false : { opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={
+              reduce
+                ? { duration: 0 }
+                : { duration: 0.2, ease: [0.22, 1, 0.36, 1] }
+            }
+          >
+            {children}
+          </motion.div>
         </main>
       </div>
 
       <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-6 border-t bg-card md:hidden">
         {nav.map((item) => (
-          <NavLink
+          <Link
             key={item.to}
             to={item.to}
-            className={({ isActive }) =>
-              cn(
-                'flex flex-col items-center gap-1 py-2 text-[10px] text-muted-foreground',
-                isActive && 'font-semibold text-primary',
-              )
-            }
+            className="flex flex-col items-center gap-1 py-2 text-[10px] text-muted-foreground"
+            activeProps={{ className: 'font-semibold text-primary' }}
           >
             <item.icon className="size-5" />
             {item.label}
-          </NavLink>
+          </Link>
         ))}
       </nav>
     </div>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { ArrowLeft, ChevronRight, Trash2 } from 'lucide-react'
 import { FilterChip } from '@/components/filter-chip'
@@ -30,8 +30,7 @@ const PAGE_SIZE = 15
 
 type RangePreset = '30' | '90' | 'all' | 'custom'
 
-export function HistoryPage() {
-  const { sessionId } = useParams()
+export function HistoryPage({ sessionId }: { sessionId?: string }) {
   const navigate = useNavigate()
   const {
     sessions,
@@ -144,7 +143,7 @@ export function HistoryPage() {
     const description = `${formatDate(pending.performedOn)} · ${day?.name ?? 'Session'}`
     const leave = sessionId === id
     setPending(null)
-    if (leave) navigate('/history', { replace: true })
+    if (leave) void navigate({ to: '/history', replace: true })
     removeSession(id)
     toast.success('Day removed', { description })
   }
@@ -322,7 +321,8 @@ export function HistoryPage() {
                   className="group flex items-center gap-4 px-4 py-2.5 hover:bg-muted/50"
                 >
                   <Link
-                    to={`/history/${session.id}`}
+                    to="/history/$sessionId"
+                    params={{ sessionId: session.id }}
                     className="flex flex-1 items-center gap-4"
                   >
                     <span className="w-36 text-sm font-medium num">

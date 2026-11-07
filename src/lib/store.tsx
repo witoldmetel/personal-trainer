@@ -8,6 +8,7 @@ import {
 } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { PageSkeleton } from '@/components/page-skeleton'
 import {
   addDaysIso,
   compareIso,
@@ -881,16 +882,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [queryClient, state])
 
   if (gymQuery.isPending) {
-    return (
-      <div className="flex min-h-svh items-center justify-center bg-background text-sm text-muted-foreground">
-        Loading
-      </div>
-    )
+    return <PageSkeleton />
   }
 
   if (gymQuery.isError) {
     return (
-      <div className="flex min-h-svh flex-col items-center justify-center gap-2 bg-background px-4 text-center">
+      <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
         <p className="text-sm font-medium">Could not load gym data</p>
         <p className="text-sm text-muted-foreground">
           {gymQuery.error instanceof Error

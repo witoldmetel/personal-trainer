@@ -17,6 +17,7 @@ Product and stack decisions: [docs/prd.md](./docs/prd.md), [docs/tech-stack.md](
 | Layer | Choice |
 |---|---|
 | App | Vite, React 19, TypeScript |
+| Router | TanStack Router (file routes). TanStack Start later. |
 | Package manager | pnpm 11 |
 | UI | [shadcn/ui](https://ui.shadcn.com/) + Tailwind + lucide |
 | Motion | [Motion](https://motion.dev/) (`motion/react`) |
