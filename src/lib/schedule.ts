@@ -1,6 +1,21 @@
 import { addDaysIso, weekMonday } from '@/lib/dates'
 import type { IsoWeekday, ProgramDay, Session } from '@/lib/types'
 
+export const WEEKDAY_MIGRATION_SQL = `alter table public.program_days
+  add column if not exists weekday smallint
+  check (weekday is null or (weekday >= 1 and weekday <= 7));
+
+notify pgrst, 'reload schema';`
+
+export class WeekdayMigrationError extends Error {
+  constructor() {
+    super(
+      'Add the weekday column in the Supabase SQL Editor, then set the day again.',
+    )
+    this.name = 'WeekdayMigrationError'
+  }
+}
+
 export const WEEKDAYS: Array<{ value: IsoWeekday; label: string; short: string }> =
   [
     { value: 1, label: 'Monday', short: 'Mon' },

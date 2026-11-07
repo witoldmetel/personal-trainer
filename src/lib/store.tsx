@@ -66,7 +66,10 @@ type StoreApi = StoreState & {
   removeProgram: (programId: string) => void
   addDay: (programId: string, name: string) => string
   renameDay: (dayId: string, name: string) => void
-  setDayWeekday: (dayId: string, weekday: IsoWeekday | null) => void
+  setDayWeekday: (
+    dayId: string,
+    weekday: IsoWeekday | null,
+  ) => Promise<void>
   applyProgramWeekdays: (programId: string) => {
     updated: number
     skipped: number
@@ -407,13 +410,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         runPersist(() => persistRenameDay(dayId, trimmed))
       },
       setDayWeekday: (dayId, weekday) => {
+        const previous =
+          state.programDays.find((day) => day.id === dayId)?.weekday ?? null
         setGym((s) => ({
           ...s,
           programDays: s.programDays.map((day) =>
             day.id === dayId ? { ...day, weekday } : day,
           ),
         }))
-        runPersist(() => persistDayWeekday(dayId, weekday))
+        return persistDayWeekday(dayId, weekday).catch((error) => {
+          setGym((s) => ({
+            ...s,
+            programDays: s.programDays.map((day) =>
+              day.id === dayId ? { ...day, weekday: previous } : day,
+            ),
+          }))
+          throw error
+        })
       },
       applyProgramWeekdays: (programId) => {
         const days = state.programDays.filter((day) => day.programId === programId)

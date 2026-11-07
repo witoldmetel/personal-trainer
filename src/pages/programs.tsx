@@ -24,6 +24,8 @@ import {
 import { PageHeader } from '@/components/page-header'
 import {
   WEEKDAYS,
+  WEEKDAY_MIGRATION_SQL,
+  WeekdayMigrationError,
   parseIsoWeekday,
   previewWeekdayHistory,
   weekdayLabel,
@@ -85,6 +87,7 @@ export function ProgramsPage() {
   const [dialog, setDialog] = useState<DialogKind | null>(null)
   const [confirm, setConfirm] = useState<ConfirmKind | null>(null)
   const [applyOpen, setApplyOpen] = useState(false)
+  const [migrationOpen, setMigrationOpen] = useState(false)
 
   const days = useMemo(
     () =>
@@ -441,9 +444,22 @@ export function ProgramsPage() {
                   </Label>
                   <Select
                     value={day.weekday == null ? 'none' : String(day.weekday)}
-                    onValueChange={(value) =>
-                      setDayWeekday(day.id, parseIsoWeekday(value))
-                    }
+                    onValueChange={(value) => {
+                      void setDayWeekday(day.id, parseIsoWeekday(value)).catch(
+                        (error) => {
+                          if (error instanceof WeekdayMigrationError) {
+                            setMigrationOpen(true)
+                            return
+                          }
+                          toast.error('Could not save', {
+                            description:
+                              error instanceof Error
+                                ? error.message
+                                : 'Try again.',
+                          })
+                        },
+                      )
+                    }}
                   >
                     <SelectTrigger
                       id={`weekday-${day.id}`}
@@ -561,6 +577,36 @@ export function ProgramsPage() {
               }}
             >
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={migrationOpen} onOpenChange={setMigrationOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Add the weekday column</DialogTitle>
+            <DialogDescription>
+              Paste this in the Supabase SQL Editor, run it, then set the weekday
+              again.
+            </DialogDescription>
+          </DialogHeader>
+          <pre className="max-h-48 overflow-auto rounded-md border bg-muted px-3 py-2 text-xs">
+            {WEEKDAY_MIGRATION_SQL}
+          </pre>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                void navigator.clipboard.writeText(WEEKDAY_MIGRATION_SQL)
+                toast.success('SQL copied')
+              }}
+            >
+              Copy SQL
+            </Button>
+            <Button type="button" onClick={() => setMigrationOpen(false)}>
+              Done
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,5 +1,5 @@
 import { createId } from '@/lib/ids'
-import { parseIsoWeekday } from '@/lib/schedule'
+import { parseIsoWeekday, WeekdayMigrationError } from '@/lib/schedule'
 import { supabase } from '@/lib/supabase'
 import {
   isFilledSet,
@@ -381,9 +381,7 @@ export async function persistDayWeekday(
   const db = client()
   const first = await db.from('program_days').update({ weekday }).eq('id', id)
   if (first.error && isUnknownWeekday(first.error.message)) {
-    throw new Error(
-      'Run the program day weekday migration in Supabase, then try again.',
-    )
+    throw new WeekdayMigrationError()
   }
   await throwIfError(first.error)
 }
