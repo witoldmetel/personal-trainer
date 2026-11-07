@@ -67,6 +67,16 @@ async function throwIfError(error: { message: string } | null) {
   if (error) throw new Error(error.message)
 }
 
+function isUnknownUsesWeight(message: string): boolean {
+  return /uses_weight/i.test(message)
+}
+
+function withoutUsesWeight<T extends object>(row: T): Omit<T, 'uses_weight'> {
+  const next = { ...row } as T & { uses_weight?: unknown }
+  delete next.uses_weight
+  return next
+}
+
 export async function loadGym(): Promise<StoreState> {
   const db = client()
   const [
@@ -276,11 +286,39 @@ export async function ensureProfile(githubUsername: string) {
 }
 
 async function insertChunked(table: string, rows: object[]) {
+  if (rows.length === 0) return
   const db = client()
   for (let i = 0; i < rows.length; i += 100) {
-    const { error } = await db.from(table).insert(rows.slice(i, i + 100))
-    await throwIfError(error)
+    const chunk = rows.slice(i, i + 100)
+    const first = await db.from(table).insert(chunk)
+    if (
+      table === 'program_exercises' &&
+      first.error &&
+      isUnknownUsesWeight(first.error.message)
+    ) {
+      const { error } = await db.from(table).insert(chunk.map(withoutUsesWeight))
+      await throwIfError(error)
+      continue
+    }
+    await throwIfError(first.error)
   }
+}
+
+async function updateProgramExerciseRow(
+  id: string,
+  patch: Record<string, unknown>,
+) {
+  const db = client()
+  const first = await db.from('program_exercises').update(patch).eq('id', id)
+  if (first.error && isUnknownUsesWeight(first.error.message)) {
+    const { error } = await db
+      .from('program_exercises')
+      .update(withoutUsesWeight(patch))
+      .eq('id', id)
+    await throwIfError(error)
+    return
+  }
+  await throwIfError(first.error)
 }
 
 export async function persistProgram(program: Program) {
@@ -305,6 +343,42 @@ export async function persistDay(day: ProgramDay) {
   await throwIfError(error)
 }
 
+export async function persistRenameProgram(id: string, name: string) {
+  const { error } = await client().from('programs').update({ name }).eq('id', id)
+  await throwIfError(error)
+}
+
+export async function persistRemoveProgram(id: string) {
+  const { error } = await client().from('programs').delete().eq('id', id)
+  await throwIfError(error)
+}
+
+export async function persistRenameDay(id: string, name: string) {
+  const { error } = await client()
+    .from('program_days')
+    .update({ name })
+    .eq('id', id)
+  await throwIfError(error)
+}
+
+export async function persistRemoveDay(id: string) {
+  const { error } = await client().from('program_days').delete().eq('id', id)
+  await throwIfError(error)
+}
+
+export async function persistDayOrder(
+  updates: Array<{ id: string; sortOrder: number }>,
+) {
+  const db = client()
+  for (const row of updates) {
+    const { error } = await db
+      .from('program_days')
+      .update({ sort_order: row.sortOrder })
+      .eq('id', row.id)
+    await throwIfError(error)
+  }
+}
+
 export async function persistExercise(exercise: Exercise) {
   const uid = await userId()
   const { error } = await client()
@@ -320,9 +394,8 @@ export async function persistExercise(exercise: Exercise) {
 
 export async function persistProgramExercise(row: ProgramExercise) {
   const uid = await userId()
-  const { error } = await client()
-    .from('program_exercises')
-    .insert({
+  await insertChunked('program_exercises', [
+    {
       id: row.id,
       user_id: uid,
       program_day_id: row.programDayId,
@@ -331,8 +404,8 @@ export async function persistProgramExercise(row: ProgramExercise) {
       target_sets: row.targetSets,
       target_reps: row.targetReps,
       uses_weight: row.usesWeight,
-    })
-  await throwIfError(error)
+    },
+  ])
 }
 
 export async function persistSession(session: Session) {
@@ -424,15 +497,11 @@ export async function persistProgramExerciseTargets(
   targetReps: number,
   usesWeight: boolean,
 ) {
-  const { error } = await client()
-    .from('program_exercises')
-    .update({
-      target_sets: targetSets,
-      target_reps: targetReps,
-      uses_weight: usesWeight,
-    })
-    .eq('id', id)
-  await throwIfError(error)
+  await updateProgramExerciseRow(id, {
+    target_sets: targetSets,
+    target_reps: targetReps,
+    uses_weight: usesWeight,
+  })
 }
 
 export async function persistImport(next: StoreState, previous: StoreState) {
@@ -501,16 +570,12 @@ export async function persistImport(next: StoreState, previous: StoreState) {
     ) {
       continue
     }
-    const { error } = await db
-      .from('program_exercises')
-      .update({
-        sort_order: row.sortOrder,
-        target_sets: row.targetSets,
-        target_reps: row.targetReps,
-        uses_weight: row.usesWeight,
-      })
-      .eq('id', row.id)
-    await throwIfError(error)
+    await updateProgramExerciseRow(row.id, {
+      sort_order: row.sortOrder,
+      target_sets: row.targetSets,
+      target_reps: row.targetReps,
+      uses_weight: row.usesWeight,
+    })
   }
   await insertChunked(
     'sessions',

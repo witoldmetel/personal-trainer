@@ -18,7 +18,9 @@ import { cn } from '@/lib/utils'
 
 type DialogKind =
   | { type: 'program' }
+  | { type: 'edit-program'; id: string; name: string }
   | { type: 'day' }
+  | { type: 'edit-day'; id: string; name: string }
   | { type: 'exercise' }
   | {
       type: 'rename'
@@ -30,6 +32,10 @@ type DialogKind =
       usesWeight: boolean
     }
 
+type ConfirmKind =
+  | { type: 'program'; id: string; name: string }
+  | { type: 'day'; id: string; name: string }
+
 export function ProgramsPage() {
   const {
     programs,
@@ -37,7 +43,11 @@ export function ProgramsPage() {
     exercises,
     programExercises,
     addProgram,
+    renameProgram,
+    removeProgram,
     addDay,
+    renameDay,
+    removeDay,
     addExerciseToDay,
     renameExercise,
     removeProgramExercise,
@@ -49,6 +59,7 @@ export function ProgramsPage() {
     programDays.find((d) => d.programId === (programs[0]?.id ?? ''))?.id ?? '',
   )
   const [dialog, setDialog] = useState<DialogKind | null>(null)
+  const [confirm, setConfirm] = useState<ConfirmKind | null>(null)
 
   const days = useMemo(
     () =>
@@ -95,12 +106,18 @@ export function ProgramsPage() {
             </header>
             <ul>
               {programs.map((program) => (
-                <li key={program.id}>
+                <li
+                  key={program.id}
+                  className={cn(
+                    'flex items-center border-b last:border-0',
+                    program.id === programId && 'bg-muted',
+                  )}
+                >
                   <button
                     type="button"
                     className={cn(
-                      'w-full px-3 py-2 text-left text-sm hover:bg-muted',
-                      program.id === programId && 'bg-muted font-medium',
+                      'min-w-0 flex-1 px-3 py-2 text-left text-sm hover:bg-muted',
+                      program.id === programId && 'font-medium',
                     )}
                     onClick={() => {
                       setProgramId(program.id)
@@ -112,6 +129,34 @@ export function ProgramsPage() {
                   >
                     {program.name}
                   </button>
+                  <div className="flex shrink-0 pr-1">
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      onClick={() =>
+                        setDialog({
+                          type: 'edit-program',
+                          id: program.id,
+                          name: program.name,
+                        })
+                      }
+                    >
+                      <Pencil />
+                    </Button>
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      onClick={() =>
+                        setConfirm({
+                          type: 'program',
+                          id: program.id,
+                          name: program.name,
+                        })
+                      }
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -139,17 +184,51 @@ export function ProgramsPage() {
             ) : (
               <ul>
                 {days.map((day) => (
-                  <li key={day.id}>
+                  <li
+                    key={day.id}
+                    className={cn(
+                      'flex items-center border-b last:border-0',
+                      day.id === dayId && 'bg-muted',
+                    )}
+                  >
                     <button
                       type="button"
                       className={cn(
-                        'w-full px-3 py-2 text-left text-sm hover:bg-muted',
-                        day.id === dayId && 'bg-muted font-medium',
+                        'min-w-0 flex-1 px-3 py-2 text-left text-sm hover:bg-muted',
+                        day.id === dayId && 'font-medium',
                       )}
                       onClick={() => setDayId(day.id)}
                     >
                       {day.name}
                     </button>
+                    <div className="flex shrink-0 pr-1">
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        onClick={() =>
+                          setDialog({
+                            type: 'edit-day',
+                            id: day.id,
+                            name: day.name,
+                          })
+                        }
+                      >
+                        <Pencil />
+                      </Button>
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        onClick={() =>
+                          setConfirm({
+                            type: 'day',
+                            id: day.id,
+                            name: day.name,
+                          })
+                        }
+                      >
+                        <Trash2 />
+                      </Button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -252,7 +331,7 @@ export function ProgramsPage() {
       <EditorDialog
         key={
           dialog
-            ? `${dialog.type}-${dialog.type === 'rename' ? dialog.exerciseId : 'new'}`
+            ? `${dialog.type}-${'id' in dialog ? dialog.id : dialog.type === 'rename' ? dialog.exerciseId : 'new'}`
             : 'closed'
         }
         dialog={dialog}
@@ -262,10 +341,12 @@ export function ProgramsPage() {
           setProgramId(id)
           setDayId('')
         }}
+        onRenameProgram={(id, name) => renameProgram(id, name)}
         onAddDay={(name) => {
           const id = addDay(programId, name)
           setDayId(id)
         }}
+        onRenameDay={(id, name) => renameDay(id, name)}
         onAddExercise={(value) =>
           addExerciseToDay({ programDayId: dayId, ...value })
         }
@@ -274,6 +355,57 @@ export function ProgramsPage() {
           updateProgramExerciseTargets(peId, sets, reps, usesWeight)
         }}
       />
+
+      <Dialog
+        open={confirm != null}
+        onOpenChange={(open) => {
+          if (!open) setConfirm(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {confirm?.type === 'program' ? 'Delete this program?' : 'Delete this day?'}
+            </DialogTitle>
+            <DialogDescription>
+              {confirm?.type === 'program'
+                ? `Removes ${confirm.name}, its days, and exercise targets. Past sessions stay in History.`
+                : confirm
+                  ? `Removes ${confirm.name} and its exercise targets. Past sessions stay in History.`
+                  : null}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setConfirm(null)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                if (!confirm) return
+                if (confirm.type === 'program') {
+                  const remaining = programs.filter((p) => p.id !== confirm.id)
+                  const nextProgram = remaining[0]
+                  removeProgram(confirm.id)
+                  setProgramId(nextProgram?.id ?? '')
+                  const first = programDays
+                    .filter((d) => d.programId === nextProgram?.id)
+                    .sort((a, b) => a.sortOrder - b.sortOrder)[0]
+                  setDayId(first?.id ?? '')
+                } else {
+                  const remaining = days.filter((d) => d.id !== confirm.id)
+                  removeDay(confirm.id)
+                  setDayId(remaining[0]?.id ?? '')
+                }
+                setConfirm(null)
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -282,14 +414,18 @@ function EditorDialog({
   dialog,
   onClose,
   onAddProgram,
+  onRenameProgram,
   onAddDay,
+  onRenameDay,
   onAddExercise,
   onRename,
 }: {
   dialog: DialogKind | null
   onClose: () => void
   onAddProgram: (name: string) => void
+  onRenameProgram: (id: string, name: string) => void
   onAddDay: (name: string) => void
+  onRenameDay: (id: string, name: string) => void
   onAddExercise: (value: {
     name: string
     targetSets: number
@@ -309,16 +445,24 @@ function EditorDialog({
   const title =
     dialog?.type === 'program'
       ? 'Add program'
-      : dialog?.type === 'day'
-        ? 'Add day'
-        : dialog?.type === 'exercise'
-          ? 'Add exercise'
-          : 'Edit exercise'
+      : dialog?.type === 'edit-program'
+        ? 'Edit program'
+        : dialog?.type === 'day'
+          ? 'Add day'
+          : dialog?.type === 'edit-day'
+            ? 'Edit day'
+            : dialog?.type === 'exercise'
+              ? 'Add exercise'
+              : 'Edit exercise'
 
   const form = useForm({
     defaultValues: {
       name:
-        dialog?.type === 'rename' ? dialog.name : '',
+        dialog?.type === 'rename' ||
+        dialog?.type === 'edit-program' ||
+        dialog?.type === 'edit-day'
+          ? dialog.name
+          : '',
       targetSets: dialog?.type === 'rename' ? dialog.sets : 3,
       targetReps: dialog?.type === 'rename' ? dialog.reps : 8,
       skipWeight: dialog?.type === 'rename' ? !dialog.usesWeight : false,
@@ -326,7 +470,9 @@ function EditorDialog({
     onSubmit: ({ value }) => {
       if (!dialog) return
       if (dialog.type === 'program') onAddProgram(value.name)
+      if (dialog.type === 'edit-program') onRenameProgram(dialog.id, value.name)
       if (dialog.type === 'day') onAddDay(value.name)
+      if (dialog.type === 'edit-day') onRenameDay(dialog.id, value.name)
       if (dialog.type === 'exercise') {
         onAddExercise({
           name: value.name,
@@ -362,7 +508,9 @@ function EditorDialog({
           <DialogDescription>
             {dialog?.type === 'rename'
               ? 'This updates the exercise name and targets. History stays.'
-              : 'Keep names short. Targets are a starting point, not a lock.'}
+              : dialog?.type === 'edit-program' || dialog?.type === 'edit-day'
+                ? 'Past sessions keep their logged sets.'
+                : 'Keep names short. Targets are a starting point, not a lock.'}
           </DialogDescription>
         </DialogHeader>
         <form

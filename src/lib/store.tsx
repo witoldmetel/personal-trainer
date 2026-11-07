@@ -13,15 +13,20 @@ import {
   emptyGym,
   loadGym,
   persistDay,
+  persistDayOrder,
   persistExercise,
   persistImport,
   persistProgram,
   persistProgramExercise,
   persistProgramExerciseOrder,
   persistProgramExerciseTargets,
+  persistRemoveDay,
+  persistRemoveProgram,
   persistRemoveProgramExercise,
   persistRemoveSession,
+  persistRenameDay,
   persistRenameExercise,
+  persistRenameProgram,
   persistSession,
   persistSessionStatus,
   persistSetPatch,
@@ -51,7 +56,11 @@ type StoreApi = StoreState & {
   addSet: (sessionId: string, exerciseId: string) => void
   removeSession: (sessionId: string) => void
   addProgram: (name: string) => string
+  renameProgram: (programId: string, name: string) => void
+  removeProgram: (programId: string) => void
   addDay: (programId: string, name: string) => string
+  renameDay: (dayId: string, name: string) => void
+  removeDay: (dayId: string) => void
   addExerciseToDay: (input: {
     programDayId: string
     name: string
@@ -314,6 +323,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         runPersist(() => persistProgram(program))
         return id
       },
+      renameProgram: (programId, name) => {
+        const trimmed = name.trim()
+        if (!trimmed) return
+        setGym((s) => ({
+          ...s,
+          programs: s.programs.map((program) =>
+            program.id === programId ? { ...program, name: trimmed } : program,
+          ),
+        }))
+        runPersist(() => persistRenameProgram(programId, trimmed))
+      },
+      removeProgram: (programId) => {
+        const dayIds = state.programDays
+          .filter((day) => day.programId === programId)
+          .map((day) => day.id)
+        setGym((s) => ({
+          ...s,
+          programs: s.programs.filter((program) => program.id !== programId),
+          programDays: s.programDays.filter((day) => day.programId !== programId),
+          programExercises: s.programExercises.filter(
+            (pe) => !dayIds.includes(pe.programDayId),
+          ),
+          sessions: s.sessions.map((session) =>
+            session.programDayId && dayIds.includes(session.programDayId)
+              ? { ...session, programDayId: null }
+              : session,
+          ),
+        }))
+        runPersist(() => persistRemoveProgram(programId))
+      },
       addDay: (programId, name) => {
         const id = createId('day')
         const sortOrder = state.programDays.filter((d) => d.programId === programId)
@@ -322,6 +361,48 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setGym((s) => ({ ...s, programDays: [...s.programDays, day] }))
         runPersist(() => persistDay(day))
         return id
+      },
+      renameDay: (dayId, name) => {
+        const trimmed = name.trim()
+        if (!trimmed) return
+        setGym((s) => ({
+          ...s,
+          programDays: s.programDays.map((day) =>
+            day.id === dayId ? { ...day, name: trimmed } : day,
+          ),
+        }))
+        runPersist(() => persistRenameDay(dayId, trimmed))
+      },
+      removeDay: (dayId) => {
+        const target = state.programDays.find((day) => day.id === dayId)
+        if (!target) return
+        const remaining = state.programDays
+          .filter((day) => day.id !== dayId)
+          .map((day) => {
+            if (day.programId !== target.programId) return day
+            if (day.sortOrder < target.sortOrder) return day
+            return { ...day, sortOrder: day.sortOrder - 1 }
+          })
+        setGym((s) => ({
+          ...s,
+          programDays: remaining,
+          programExercises: s.programExercises.filter(
+            (pe) => pe.programDayId !== dayId,
+          ),
+          sessions: s.sessions.map((session) =>
+            session.programDayId === dayId
+              ? { ...session, programDayId: null }
+              : session,
+          ),
+        }))
+        runPersist(async () => {
+          await persistRemoveDay(dayId)
+          await persistDayOrder(
+            remaining
+              .filter((day) => day.programId === target.programId)
+              .map((day) => ({ id: day.id, sortOrder: day.sortOrder })),
+          )
+        })
       },
       addExerciseToDay: ({
         programDayId,
