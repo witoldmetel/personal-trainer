@@ -1,18 +1,9 @@
 import { useMemo } from 'react'
-import {
-  createColumnHelper,
-  tableFeatures,
-  useTable,
-} from '@tanstack/react-table'
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { useStore } from '@/lib/store'
 import type { LoggerRow } from '@/lib/types'
 import { cn } from '@/lib/utils'
-
-const features = tableFeatures({})
-const helper = createColumnHelper<typeof features, LoggerRow>()
 
 function parseNumber(value: string): number | null {
   const trimmed = value.trim()
@@ -36,27 +27,26 @@ function NumberCell({
   row,
   field,
   col,
+  className,
 }: {
   row: LoggerRow
   field: 'reps' | 'weightKg'
   col: string
+  className?: string
 }) {
   const { updateSet } = useStore()
-  const filled = row.reps != null && (!row.usesWeight || row.weightKg != null)
 
   return (
-    <Input
+    <input
       type="number"
-      inputMode="decimal"
+      inputMode={field === 'weightKg' ? 'decimal' : 'numeric'}
       step={field === 'weightKg' ? 0.5 : 1}
       min={0}
       value={row[field] ?? ''}
       data-logger-col={col}
       data-row-index={row.rowIndex}
-      className={cn(
-        'h-8 w-20 tabular-nums md:text-sm',
-        filled && 'border-primary/40',
-      )}
+      placeholder={field === 'weightKg' ? 'kg' : undefined}
+      className={cn('cell-input', className)}
       onChange={(e) =>
         updateSet(row.setId, { [field]: parseNumber(e.target.value) })
       }
@@ -69,63 +59,6 @@ function NumberCell({
     />
   )
 }
-
-function ExerciseCell({ row }: { row: LoggerRow }) {
-  const { addSet } = useStore()
-  return (
-    <div className="flex items-start gap-2 pt-0.5">
-      <span className="font-medium">{row.exerciseName}</span>
-      <Button
-        type="button"
-        variant="ghost"
-        size="xs"
-        className="text-muted-foreground"
-        onClick={() => addSet(row.sessionId, row.exerciseId)}
-      >
-        <Plus />
-        Add set
-      </Button>
-    </div>
-  )
-}
-
-const columns = helper.columns([
-  helper.accessor('exerciseName', {
-    header: 'Exercise',
-    cell: ({ row }) => <ExerciseCell row={row.original} />,
-  }),
-  helper.accessor('setNumber', {
-    header: 'Set',
-    cell: ({ row }) => (
-      <span className="tabular-nums text-muted-foreground">
-        {row.original.setNumber}
-      </span>
-    ),
-  }),
-  helper.accessor('reps', {
-    header: 'Reps',
-    cell: ({ row }) => (
-      <NumberCell row={row.original} field="reps" col="reps" />
-    ),
-  }),
-  helper.accessor('weightKg', {
-    header: 'Weight (kg)',
-    cell: ({ row }) =>
-      row.original.usesWeight ? (
-        <NumberCell row={row.original} field="weightKg" col="weight" />
-      ) : (
-        <span className="text-muted-foreground">—</span>
-      ),
-  }),
-  helper.accessor('lastTime', {
-    header: 'Last time',
-    cell: ({ row }) => (
-      <span className="tabular-nums text-muted-foreground">
-        {row.original.lastTime ?? '—'}
-      </span>
-    ),
-  }),
-])
 
 function groupedRows(rows: LoggerRow[]) {
   const groups: { exerciseId: string; name: string; rows: LoggerRow[] }[] = []
@@ -144,68 +77,81 @@ function groupedRows(rows: LoggerRow[]) {
   return groups
 }
 
+function filled(row: LoggerRow) {
+  return row.reps != null && (!row.usesWeight || row.weightKg != null)
+}
+
 export function SetLogger({ sessionId }: { sessionId: string }) {
-  const { loggerRows } = useStore()
+  const { loggerRows, programExercises, sessions, addSet } = useStore()
   const data = useMemo(() => loggerRows(sessionId), [loggerRows, sessionId])
-  const table = useTable({ features, columns, data })
   const groups = groupedRows(data)
+  const session = sessions.find((s) => s.id === sessionId)
 
   return (
     <>
-      <div className="hidden overflow-x-auto rounded-lg border md:block">
-        <table className="w-full min-w-[720px] text-sm">
-          <thead className="bg-muted/50 text-left text-muted-foreground">
-            {table.getHeaderGroups().map((group) => (
-              <tr key={group.id} className="border-b">
-                {group.headers.map((header) => (
-                  <th key={header.id} className="px-3 py-2 font-medium">
-                    {header.isPlaceholder ? null : (
-                      <table.FlexRender header={header} />
-                    )}
-                  </th>
-                ))}
-              </tr>
-            ))}
+      <div className="hidden overflow-hidden rounded-lg border bg-card md:block">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/60">
+            <tr className="text-left">
+              <th className="eyebrow w-[32%] px-4 py-2.5">Exercise</th>
+              <th className="eyebrow w-16 px-3 py-2.5">Set</th>
+              <th className="eyebrow w-32 px-3 py-2.5">Reps</th>
+              <th className="eyebrow w-36 px-3 py-2.5">Weight (kg)</th>
+              <th className="eyebrow px-4 py-2.5">Last time</th>
+            </tr>
           </thead>
           <tbody>
             {groups.map((group) =>
               group.rows.map((row, i) => {
-                const filled = row.reps != null && (!row.usesWeight || row.weightKg != null)
+                const pe = programExercises.find(
+                  (item) =>
+                    item.programDayId === session?.programDayId &&
+                    item.exerciseId === row.exerciseId,
+                )
                 return (
                   <tr
                     key={row.setId}
-                    className={cn(
-                      'border-b last:border-0',
-                      filled && 'bg-primary/5',
-                    )}
+                    className={cn(i === 0 && 'border-t', filled(row) && 'bg-primary-soft/70')}
                   >
                     {i === 0 ? (
                       <td
                         rowSpan={group.rows.length}
-                        className="px-3 py-1.5 align-top"
+                        className="border-r bg-card px-4 py-3 align-top"
                       >
-                        <ExerciseCell row={row} />
+                        <div className="font-medium">{row.exerciseName}</div>
+                        {pe ? (
+                          <div className="mt-0.5 text-xs text-muted-foreground num">
+                            Target {pe.targetSets}×{pe.targetReps}
+                            {pe.usesWeight ? '' : ' · no weight'}
+                          </div>
+                        ) : null}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="-ml-2 mt-2 h-7 text-primary"
+                          onClick={() => addSet(row.sessionId, row.exerciseId)}
+                        >
+                          <Plus className="size-3.5" />
+                          Add set
+                        </Button>
                       </td>
                     ) : null}
-                    <td className="px-3 py-1.5 align-middle">
-                      <span className="tabular-nums text-muted-foreground">
-                        {row.setNumber}
-                      </span>
+                    <td className="px-3 py-1 text-muted-foreground num">
+                      {row.setNumber}
                     </td>
-                    <td className="px-3 py-1.5 align-middle">
+                    <td className="px-2 py-1">
                       <NumberCell row={row} field="reps" col="reps" />
                     </td>
-                    <td className="px-3 py-1.5 align-middle">
+                    <td className="px-2 py-1">
                       {row.usesWeight ? (
                         <NumberCell row={row} field="weightKg" col="weight" />
                       ) : (
-                        <span className="text-muted-foreground">—</span>
+                        <span className="px-2 text-muted-foreground">—</span>
                       )}
                     </td>
-                    <td className="px-3 py-1.5 align-middle">
-                      <span className="tabular-nums text-muted-foreground">
-                        {row.lastTime ?? '—'}
-                      </span>
+                    <td className="px-4 py-1 text-muted-foreground num">
+                      {row.lastTime ?? '—'}
                     </td>
                   </tr>
                 )
@@ -217,53 +163,60 @@ export function SetLogger({ sessionId }: { sessionId: string }) {
 
       <div className="flex flex-col gap-3 md:hidden">
         {groups.map((group) => (
-          <section
-            key={group.exerciseId}
-            className="rounded-lg border bg-card p-3"
-          >
-            <div className="mb-2">
-              <h3 className="font-medium">{group.name}</h3>
-              <p className="text-xs text-muted-foreground tabular-nums">
-                Last time {group.rows[0]?.lastTime ?? '—'}
-              </p>
+          <div key={group.exerciseId} className="rounded-lg border bg-card">
+            <div className="flex items-baseline justify-between border-b px-4 py-3">
+              <div className="font-medium">{group.name}</div>
+              <div className="text-xs text-muted-foreground num">
+                Last: {group.rows[0]?.lastTime ?? '—'}
+              </div>
             </div>
-            <MobileSets rows={group.rows} />
-          </section>
+            <div className="divide-y">
+              {group.rows.map((row) => (
+                <div
+                  key={row.setId}
+                  className={cn(
+                    'flex items-center gap-3 px-4 py-2',
+                    filled(row) && 'bg-primary-soft/70',
+                  )}
+                >
+                  <span className="w-12 text-xs text-muted-foreground num">
+                    Set {row.setNumber}
+                  </span>
+                  <NumberCell
+                    row={row}
+                    field="reps"
+                    col="reps"
+                    className="h-10 flex-1 border-input bg-background"
+                  />
+                  {row.usesWeight ? (
+                    <NumberCell
+                      row={row}
+                      field="weightKg"
+                      col="weight"
+                      className="h-10 flex-1 border-input bg-background"
+                    />
+                  ) : null}
+                </div>
+              ))}
+            </div>
+            <div className="px-2 py-1.5">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-primary"
+                onClick={() => {
+                  const last = group.rows[group.rows.length - 1]
+                  if (last) addSet(last.sessionId, last.exerciseId)
+                }}
+              >
+                <Plus className="size-3.5" />
+                Add set
+              </Button>
+            </div>
+          </div>
         ))}
       </div>
     </>
-  )
-}
-
-function MobileSets({ rows }: { rows: LoggerRow[] }) {
-  const { addSet } = useStore()
-  const last = rows[rows.length - 1]
-
-  return (
-    <div className="flex flex-col gap-2">
-      {rows.map((row) => (
-        <div key={row.setId} className="flex items-center gap-2">
-          <span className="w-10 shrink-0 text-xs text-muted-foreground tabular-nums">
-            Set {row.setNumber}
-          </span>
-          <NumberCell row={row} field="reps" col="reps" />
-          {row.usesWeight ? (
-            <NumberCell row={row} field="weightKg" col="weight" />
-          ) : null}
-        </div>
-      ))}
-      {last ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="self-start"
-          onClick={() => addSet(last.sessionId, last.exerciseId)}
-        >
-          <Plus />
-          Add set
-        </Button>
-      ) : null}
-    </div>
   )
 }

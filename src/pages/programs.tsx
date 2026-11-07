@@ -13,8 +13,14 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { PageHeader } from '@/components/page-header'
 import { useStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
+
+const editIconClass =
+  'size-7 text-primary hover:bg-primary-soft hover:text-primary'
+const deleteIconClass =
+  'size-7 text-destructive hover:bg-destructive/10 hover:text-destructive'
 
 type DialogKind =
   | { type: 'program' }
@@ -80,59 +86,77 @@ export function ProgramsPage() {
   const selectedDay = days.find((d) => d.id === dayId)
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-base font-medium">Programs</h1>
-          <p className="text-sm text-muted-foreground">
-            Fixed split, ordered exercises, target sets × reps.
-          </p>
-        </div>
-        <Button size="sm" onClick={() => setDialog({ type: 'program' })}>
-          <Plus />
-          Add program
-        </Button>
-      </div>
+    <div>
+      <PageHeader
+        title="Programs"
+        subtitle="Your split days and the lifts in each, in order."
+      />
 
       {programs.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          Create a program to lock your split, then start today’s session.
-        </p>
+        <div className="max-w-md rounded-lg border bg-card p-6">
+          <p className="text-sm text-muted-foreground">
+            Create a program to lock your split, then start today’s session.
+          </p>
+          <Button
+            size="sm"
+            className="mt-4"
+            onClick={() => setDialog({ type: 'program' })}
+          >
+            <Plus className="size-3.5" />
+            Add program
+          </Button>
+        </div>
       ) : (
-        <div className="grid gap-3 lg:grid-cols-3">
-          <section className="rounded-lg border">
-            <header className="border-b px-3 py-2 text-xs font-medium text-muted-foreground">
-              Programs
-            </header>
-            <ul>
+        <div className="grid gap-4 lg:grid-cols-[1fr_1fr_1.6fr]">
+          <section className="flex flex-col rounded-lg border bg-card">
+            <div className="flex items-center justify-between border-b px-4 py-2.5">
+              <span className="eyebrow">Programs</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-primary"
+                onClick={() => setDialog({ type: 'program' })}
+              >
+                <Plus className="size-3.5" />
+                Add program
+              </Button>
+            </div>
+            <div className="flex-1 p-1.5">
               {programs.map((program) => (
-                <li
+                <div
                   key={program.id}
                   className={cn(
-                    'flex items-center border-b last:border-0',
-                    program.id === programId && 'bg-muted',
+                    'group flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm',
+                    program.id === programId
+                      ? 'bg-primary-soft font-medium text-primary shadow-[inset_3px_0_0_var(--primary)]'
+                      : 'hover:bg-muted',
                   )}
+                  onClick={() => {
+                    setProgramId(program.id)
+                    const first = programDays
+                      .filter((d) => d.programId === program.id)
+                      .sort((a, b) => a.sortOrder - b.sortOrder)[0]
+                    setDayId(first?.id ?? '')
+                  }}
                 >
-                  <button
-                    type="button"
-                    className={cn(
-                      'min-w-0 flex-1 px-3 py-2 text-left text-sm hover:bg-muted',
-                      program.id === programId && 'font-medium',
-                    )}
-                    onClick={() => {
-                      setProgramId(program.id)
-                      const first = programDays
-                        .filter((d) => d.programId === program.id)
-                        .sort((a, b) => a.sortOrder - b.sortOrder)[0]
-                      setDayId(first?.id ?? '')
-                    }}
-                  >
+                  <div className="min-w-0 flex-1">
                     {program.name}
-                  </button>
-                  <div className="flex shrink-0 pr-1">
+                    <div className="text-xs font-normal text-muted-foreground num">
+                      {
+                        programDays.filter((d) => d.programId === program.id)
+                          .length
+                      }{' '}
+                      days
+                    </div>
+                  </div>
+                  <div
+                    className="flex items-center gap-0.5 text-muted-foreground"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <Button
-                      size="icon-xs"
+                      size="icon"
                       variant="ghost"
+                      className={editIconClass}
                       onClick={() =>
                         setDialog({
                           type: 'edit-program',
@@ -141,11 +165,12 @@ export function ProgramsPage() {
                         })
                       }
                     >
-                      <Pencil />
+                      <Pencil className="size-3.5" />
                     </Button>
                     <Button
-                      size="icon-xs"
+                      size="icon"
                       variant="ghost"
+                      className={deleteIconClass}
                       onClick={() =>
                         setConfirm({
                           type: 'program',
@@ -154,57 +179,69 @@ export function ProgramsPage() {
                         })
                       }
                     >
-                      <Trash2 />
+                      <Trash2 className="size-3.5" />
                     </Button>
                   </div>
-                </li>
+                </div>
               ))}
-            </ul>
+            </div>
           </section>
 
-          <section className="rounded-lg border">
-            <header className="flex items-center justify-between border-b px-3 py-2">
-              <span className="text-xs font-medium text-muted-foreground">
+          <section className="flex flex-col rounded-lg border bg-card">
+            <div className="flex items-center justify-between border-b px-4 py-2.5">
+              <span className="eyebrow">
                 Days{selectedProgram ? ` · ${selectedProgram.name}` : ''}
               </span>
               <Button
-                size="xs"
+                size="sm"
                 variant="ghost"
+                className="h-7 text-primary"
                 disabled={!programId}
                 onClick={() => setDialog({ type: 'day' })}
               >
-                <Plus />
+                <Plus className="size-3.5" />
                 Add day
               </Button>
-            </header>
-            {days.length === 0 ? (
-              <p className="px-3 py-3 text-sm text-muted-foreground">
-                Add a split day to this program.
-              </p>
-            ) : (
-              <ul>
-                {days.map((day) => (
-                  <li
+            </div>
+            <div className="flex-1 p-1.5">
+              {days.length === 0 ? (
+                <p className="px-3 py-6 text-sm text-muted-foreground">
+                  Add a day to this program.
+                </p>
+              ) : (
+                days.map((day, index) => (
+                  <div
                     key={day.id}
                     className={cn(
-                      'flex items-center border-b last:border-0',
-                      day.id === dayId && 'bg-muted',
+                      'group flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm',
+                      day.id === dayId
+                        ? 'bg-primary-soft font-medium text-primary shadow-[inset_3px_0_0_var(--primary)]'
+                        : 'hover:bg-muted',
                     )}
+                    onClick={() => setDayId(day.id)}
                   >
-                    <button
-                      type="button"
-                      className={cn(
-                        'min-w-0 flex-1 px-3 py-2 text-left text-sm hover:bg-muted',
-                        day.id === dayId && 'font-medium',
-                      )}
-                      onClick={() => setDayId(day.id)}
-                    >
+                    <div className="min-w-0 flex-1">
+                      <span className="mr-2 text-xs text-muted-foreground num">
+                        {index + 1}
+                      </span>
                       {day.name}
-                    </button>
-                    <div className="flex shrink-0 pr-1">
+                      <span className="ml-2 text-xs font-normal text-muted-foreground num">
+                        {
+                          programExercises.filter(
+                            (pe) => pe.programDayId === day.id,
+                          ).length
+                        }{' '}
+                        lifts
+                      </span>
+                    </div>
+                    <div
+                      className="flex items-center gap-0.5 text-muted-foreground"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <Button
-                        size="icon-xs"
+                        size="icon"
                         variant="ghost"
+                        className={editIconClass}
                         onClick={() =>
                           setDialog({
                             type: 'edit-day',
@@ -213,11 +250,12 @@ export function ProgramsPage() {
                           })
                         }
                       >
-                        <Pencil />
+                        <Pencil className="size-3.5" />
                       </Button>
                       <Button
-                        size="icon-xs"
+                        size="icon"
                         variant="ghost"
+                        className={deleteIconClass}
                         onClick={() =>
                           setConfirm({
                             type: 'day',
@@ -226,72 +264,79 @@ export function ProgramsPage() {
                           })
                         }
                       >
-                        <Trash2 />
+                        <Trash2 className="size-3.5" />
                       </Button>
                     </div>
-                  </li>
-                ))}
-              </ul>
-            )}
+                  </div>
+                ))
+              )}
+            </div>
           </section>
 
-          <section className="rounded-lg border">
-            <header className="flex items-center justify-between border-b px-3 py-2">
-              <span className="text-xs font-medium text-muted-foreground">
+          <section className="flex flex-col rounded-lg border bg-card">
+            <div className="flex items-center justify-between border-b px-4 py-2.5">
+              <span className="eyebrow">
                 Exercises{selectedDay ? ` · ${selectedDay.name}` : ''}
               </span>
               <Button
-                size="xs"
+                size="sm"
                 variant="ghost"
+                className="h-7 text-primary"
                 disabled={!dayId}
                 onClick={() => setDialog({ type: 'exercise' })}
               >
-                <Plus />
+                <Plus className="size-3.5" />
                 Add exercise
               </Button>
-            </header>
-            {dayExercises.length === 0 ? (
-              <p className="px-3 py-3 text-sm text-muted-foreground">
-                Add exercises with a sets × reps target.
-              </p>
-            ) : (
-              <ul>
-                {dayExercises.map((pe, index) => {
+            </div>
+            <div className="flex-1 p-1.5">
+              {dayExercises.length === 0 ? (
+                <p className="px-3 py-6 text-sm text-muted-foreground">
+                  Add exercises with a sets × reps target.
+                </p>
+              ) : (
+                dayExercises.map((pe, index) => {
                   const exercise = exercises.find((e) => e.id === pe.exerciseId)
                   return (
-                    <li
+                    <div
                       key={pe.id}
-                      className="flex items-center gap-2 border-b px-3 py-2 last:border-0"
+                      className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm hover:bg-muted"
                     >
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">
+                      <span className="w-4 text-xs text-muted-foreground num">
+                        {index + 1}
+                      </span>
+                      <div className="flex-1">
+                        <div className="font-medium">
                           {exercise?.name ?? 'Unknown'}
-                        </p>
-                        <p className="text-xs text-muted-foreground tabular-nums">
+                        </div>
+                        <div className="text-xs text-muted-foreground num">
                           {pe.targetSets}×{pe.targetReps}
                           {pe.usesWeight ? '' : ' · no weight'}
-                        </p>
+                        </div>
                       </div>
-                      <div className="flex shrink-0">
+                      <div className="flex items-center gap-0.5 text-muted-foreground">
                         <Button
-                          size="icon-xs"
+                          size="icon"
                           variant="ghost"
+                          className="size-7"
                           disabled={index === 0}
                           onClick={() => moveProgramExercise(pe.id, 'up')}
                         >
-                          <ArrowUp />
+                          <ArrowUp className="size-4" />
                         </Button>
                         <Button
-                          size="icon-xs"
+                          size="icon"
                           variant="ghost"
+                          className="size-7"
                           disabled={index === dayExercises.length - 1}
                           onClick={() => moveProgramExercise(pe.id, 'down')}
                         >
-                          <ArrowDown />
+                          <ArrowDown className="size-4" />
                         </Button>
                         <Button
-                          size="icon-xs"
+                          size="icon"
                           variant="ghost"
+                          className={editIconClass}
                           onClick={() =>
                             setDialog({
                               type: 'rename',
@@ -304,25 +349,26 @@ export function ProgramsPage() {
                             })
                           }
                         >
-                          <Pencil />
+                          <Pencil className="size-3.5" />
                         </Button>
                         <Button
-                          size="icon-xs"
+                          size="icon"
                           variant="ghost"
+                          className={deleteIconClass}
                           onClick={() => removeProgramExercise(pe.id)}
                         >
-                          <Trash2 />
+                          <Trash2 className="size-3.5" />
                         </Button>
                       </div>
-                    </li>
+                    </div>
                   )
-                })}
-              </ul>
-            )}
+                })
+              )}
+            </div>
             {dayExercises.length > 0 ? (
-              <p className="px-3 py-2 text-xs text-muted-foreground">
-                Removing an exercise from a day does not delete past sessions.
-              </p>
+              <div className="border-t px-4 py-2.5 text-xs text-muted-foreground">
+                Removing a lift from a day does not delete past sessions.
+              </div>
             ) : null}
           </section>
         </div>

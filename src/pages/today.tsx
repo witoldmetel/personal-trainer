@@ -1,16 +1,21 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { toast } from 'sonner'
+import { Check, Play, Trash2 } from 'lucide-react'
+import { PageHeader } from '@/components/page-header'
 import { SetLogger } from '@/components/set-logger'
 import { Button } from '@/components/ui/button'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { formatDate, todayIso } from '@/lib/dates'
 import { useStore } from '@/lib/store'
+import { isFilledSet } from '@/lib/types'
 
 export function TodayPage() {
   const {
@@ -18,16 +23,19 @@ export function TodayPage() {
     programDays,
     todaySession,
     sessionDay,
+    sessionSets,
     startSession,
     markSessionDone,
+    removeSession,
   } = useStore()
   const session = todaySession()
   const [dayId, setDayId] = useState(programDays[0]?.id ?? '')
+  const [confirmRemove, setConfirmRemove] = useState(false)
 
   if (programs.length === 0) {
     return (
-      <div className="mx-auto max-w-lg py-16 text-center">
-        <h1 className="text-base font-medium">Create a program first</h1>
+      <div className="mx-auto max-w-md py-16 text-center">
+        <h1 className="text-2xl font-semibold tracking-tight">Create a program first</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Create a program to lock your split, then start today’s session.
         </p>
@@ -44,33 +52,36 @@ export function TodayPage() {
       .sort((a, b) => a.sortOrder - b.sortOrder)
 
     return (
-      <div className="mx-auto max-w-lg">
-        <h1 className="text-base font-medium">No session today</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Pick a program day and start logging sets.
-        </p>
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
-          <div className="flex-1">
-            <p className="mb-1.5 text-xs text-muted-foreground">Program day</p>
-            <Select value={dayId} onValueChange={setDayId}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a day" />
-              </SelectTrigger>
-              <SelectContent>
-                {days.map((day) => (
-                  <SelectItem key={day.id} value={day.id}>
-                    {day.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+      <div>
+        <PageHeader title="Today" subtitle={formatDate(todayIso())} />
+        <div className="max-w-md rounded-lg border bg-card p-6">
+          <div className="text-base font-medium">Start today’s session</div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Pick a day from {programs[0]?.name ?? 'your program'}.
+          </p>
+          <label className="eyebrow mt-5 block" htmlFor="today-day">
+            Program day
+          </label>
+          <select
+            id="today-day"
+            className="mt-2 h-10 w-full rounded-md border border-input bg-card px-2 text-sm outline-none focus:ring-2 focus:ring-ring/30"
+            value={dayId}
+            onChange={(e) => setDayId(e.target.value)}
+          >
+            {days.map((day) => (
+              <option key={day.id} value={day.id}>
+                {day.name}
+              </option>
+            ))}
+          </select>
           <Button
+            className="mt-4 w-full"
             disabled={!dayId}
             onClick={() => {
               if (dayId) startSession(dayId)
             }}
           >
+            <Play className="size-4" />
             Start session
           </Button>
         </div>
@@ -79,25 +90,77 @@ export function TodayPage() {
   }
 
   const day = sessionDay(session)
+  const sessionId = session.id
+  const performedOn = session.performedOn
+  const hasFilledSet = sessionSets.some(
+    (set) => set.sessionId === session.id && isFilledSet(set),
+  )
+
+  function confirmDelete() {
+    const description = `${formatDate(performedOn)} · ${day?.name ?? 'Session'}`
+    removeSession(sessionId)
+    setConfirmRemove(false)
+    toast.success('Session removed', { description })
+  }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-base font-medium">
-            {day?.name ?? 'Session'} · {formatDate(todayIso())}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            One row per set. Tab between cells, Enter moves down.
-          </p>
-        </div>
-        {session.status === 'in_progress' ? (
-          <Button onClick={() => markSessionDone(session.id)}>Mark done</Button>
-        ) : (
-          <p className="text-sm text-primary">Session marked done</p>
-        )}
-      </div>
+    <div>
+      <PageHeader
+        title={`${day?.name ?? 'Session'} · ${formatDate(todayIso())}`}
+        subtitle="Tab between cells · Enter moves down"
+        actions={
+          <>
+            {session.status === 'in_progress' ? (
+              <Button
+                disabled={!hasFilledSet}
+                onClick={() => {
+                  if (!hasFilledSet) return
+                  markSessionDone(session.id)
+                  toast.success('Session saved', {
+                    description: 'It’s in History. You can still edit or remove it here.',
+                  })
+                }}
+              >
+                <Check className="size-4" />
+                Mark done
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => setConfirmRemove(true)}
+            >
+              <Trash2 className="size-4" />
+              Delete
+            </Button>
+          </>
+        }
+      />
       <SetLogger sessionId={session.id} />
+      <Dialog open={confirmRemove} onOpenChange={setConfirmRemove}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete this session?</DialogTitle>
+            <DialogDescription>
+              Removes {formatDate(session.performedOn)} · {day?.name ?? 'Session'} and
+              its sets. You can start today’s session again.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setConfirmRemove(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="button" variant="destructive" onClick={confirmDelete}>
+              Delete session
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

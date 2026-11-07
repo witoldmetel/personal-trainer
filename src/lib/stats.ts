@@ -173,33 +173,32 @@ export function progressRows(points: ExerciseSessionPoint[]): ProgressRow[] {
   const rows: ProgressRow[] = []
   for (const group of byExercise.values()) {
     const ordered = [...group].sort((a, b) => a.dateIso.localeCompare(b.dateIso))
-    const first = ordered[0]
-    const last = ordered[ordered.length - 1]
+    const weighted = ordered.filter((point) => point.bestWeightKg > 0)
+    const metric: ProgressRow['metric'] = weighted.length >= 2 ? 'weight' : 'reps'
+    const series = metric === 'weight' ? weighted : ordered
+    const first = series[0]
+    const last = series[series.length - 1]
     if (!first || !last || first.sessionId === last.sessionId) continue
-    const metric =
-      first.bestWeightKg === 0 && last.bestWeightKg === 0 ? 'reps' : 'weight'
     const deltaWeight = last.bestWeightKg - first.bestWeightKg
     const deltaE1rm = last.e1rm - first.e1rm
     const deltaReps = last.bestReps - first.bestReps
-    const base = metric === 'weight' ? first.bestWeightKg : first.bestReps
     const delta = metric === 'weight' ? deltaWeight : deltaReps
+    const base = metric === 'weight' ? first.bestWeightKg : first.bestReps
     const deltaPct = base === 0 ? 0 : (delta / base) * 100
     const trend =
-      metric === 'reps'
-        ? deltaReps > 0
-          ? 'progress'
-          : deltaReps < 0
-            ? 'regress'
-            : 'same'
-        : deltaWeight > 0.24
-          ? 'progress'
-          : deltaWeight < -0.24
-            ? 'regress'
-            : deltaE1rm > 0.5 || deltaReps > 0
-              ? 'progress'
-              : deltaE1rm < -0.5 || deltaReps < 0
-                ? 'regress'
-                : 'same'
+      Math.abs(deltaPct) < 0.05
+        ? 'same'
+        : metric === 'weight'
+          ? deltaWeight > 0.24
+            ? 'progress'
+            : deltaWeight < -0.24
+              ? 'regress'
+              : 'same'
+          : deltaReps > 0
+            ? 'progress'
+            : deltaReps < 0
+              ? 'regress'
+              : 'same'
     rows.push({
       exerciseId: first.exerciseId,
       exerciseName: first.exerciseName,

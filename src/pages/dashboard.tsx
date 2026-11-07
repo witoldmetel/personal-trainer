@@ -1,8 +1,9 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  CalendarDays,
+  ArrowRight,
   ChartLine,
+  ChevronRight,
   History,
   LayoutList,
   Upload,
@@ -11,23 +12,20 @@ import { CategoryBarChart } from '@/components/progress-charts'
 import {
   changeLabel,
   ChartCard,
+  describePoint,
   SummaryCard,
   TrendBadge,
 } from '@/components/progress-ui'
+import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
 import { formatDate, isoDaysAgo, todayIso } from '@/lib/dates'
 import { useStore } from '@/lib/store'
-import { buildProgressView, formatKg } from '@/lib/stats'
+import { buildProgressView, formatPct } from '@/lib/stats'
+import { isFilledSet } from '@/lib/types'
 
 export function DashboardPage() {
   const {
+    programs,
     sessions,
     sessionSets,
     exercises,
@@ -37,6 +35,7 @@ export function DashboardPage() {
   } = useStore()
   const session = todaySession()
   const day = session ? sessionDay(session) : undefined
+  const program = programs.find((p) => p.id === day?.programId) ?? programs[0]
 
   const view = useMemo(
     () =>
@@ -55,167 +54,244 @@ export function DashboardPage() {
     [sessions, sessionSets, exercises, programDays],
   )
 
+  const prior = useMemo(
+    () =>
+      buildProgressView({
+        sessions,
+        sessionSets,
+        exercises,
+        programDays,
+        filters: {
+          from: isoDaysAgo(180),
+          to: isoDaysAgo(91),
+          dayIds: [],
+          exerciseId: 'all',
+        },
+      }),
+    [sessions, sessionSets, exercises, programDays],
+  )
+
   const volumeRows = view.volumeSeries.map((point) => ({
     label: point.dateLabel,
     value: Math.round(point.volume),
   }))
   const topMovers = view.movers.slice(0, 5)
+  const todaySets = session
+    ? sessionSets.filter((set) => set.sessionId === session.id)
+    : []
+  const loggedSets = todaySets.filter((set) => set.reps != null).length
+  const volumeDelta =
+    prior.totalVolume > 0
+      ? (view.totalVolume - prior.totalVolume) / prior.totalVolume
+      : 0
+  const recentSessions = useMemo(() => {
+    const withSets = sessions.filter((row) =>
+      sessionSets.some((set) => set.sessionId === row.id && isFilledSet(set)),
+    )
+    return [...withSets]
+      .sort((a, b) =>
+        a.performedOn === b.performedOn
+          ? a.id.localeCompare(b.id)
+          : a.performedOn < b.performedOn
+            ? 1
+            : -1,
+      )
+      .slice(0, 4)
+  }, [sessions, sessionSets])
 
   return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-base font-medium">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">
-          Last 90 days at a glance. Open Charts for filters and lift-level trends.
-        </p>
+    <div>
+      <PageHeader
+        title="Dashboard"
+        subtitle="Last 90 days of training, and today’s session."
+      />
+
+      <div className="grid gap-4 lg:grid-cols-[1.1fr_2fr]">
+        <div className="flex flex-col justify-between rounded-lg border border-primary/30 bg-primary-soft p-5">
+          <div>
+            <div className="eyebrow text-primary">Today</div>
+            <div className="mt-2 text-sm text-muted-foreground num">
+              {formatDate(todayIso())}
+            </div>
+            <div className="mt-1 text-xl font-semibold">
+              {session
+                ? `${program?.name ?? 'Session'}${day ? ` · ${day.name}` : ''}`
+                : 'No session yet'}
+            </div>
+            <div className="mt-3 text-sm text-muted-foreground">
+              {session ? (
+                <span className="num">
+                  {loggedSets} of {todaySets.length} sets logged
+                </span>
+              ) : (
+                <span>Pick a program day and start logging.</span>
+              )}
+            </div>
+          </div>
+          <Button asChild className="mt-6 self-start">
+            <Link to="/today">
+              {session
+                ? session.status === 'done'
+                  ? 'Edit session'
+                  : 'Continue session'
+                : 'Start session'}
+              <ArrowRight className="size-4" />
+            </Link>
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <SummaryCard
+            label="Sessions"
+            value={String(view.sessionCount)}
+            hint={
+              view.sessionCount > 0
+                ? `~${(view.sessionCount / (90 / 7)).toFixed(0)} per week`
+                : undefined
+            }
+          />
+          <SummaryCard
+            label="Volume (kg)"
+            value={
+              view.totalVolume === 0
+                ? '—'
+                : Math.round(view.totalVolume).toLocaleString('en-GB')
+            }
+            hint={
+              prior.totalVolume > 0
+                ? `${formatPct(volumeDelta * 100)} vs prior 90 days`
+                : undefined
+            }
+          />
+          <SummaryCard
+            label="Progressing"
+            value={String(view.progressing)}
+            hint="lifts trending up"
+            tone="up"
+          />
+          <SummaryCard
+            label="Regressing"
+            value={String(view.regressing)}
+            hint="lifts trending down"
+            tone="down"
+          />
+        </div>
       </div>
 
-      <Card>
-        <CardHeader className="border-b">
-          <CardTitle>Today</CardTitle>
-          <CardDescription>{formatDate(todayIso())}</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-center justify-between gap-3">
-          {session ? (
-            <>
-              <p className="text-sm">
-                {day?.name ?? 'Session'} ·{' '}
-                {session.status === 'done' ? 'marked done' : 'in progress'}
-              </p>
-              <Button asChild>
-                <Link to="/today">
-                  {session.status === 'done' ? 'Review session' : 'Continue logging'}
-                </Link>
-              </Button>
-            </>
-          ) : (
-            <>
-              <p className="text-sm text-muted-foreground">
-                No session yet. Pick a program day and start logging.
-              </p>
-              <Button asChild>
-                <Link to="/today">Start session</Link>
-              </Button>
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <SummaryCard label="Sessions" value={String(view.sessionCount)} />
-        <SummaryCard
-          label="Volume"
-          value={view.totalVolume === 0 ? '—' : formatKg(view.totalVolume, 0)}
-        />
-        <SummaryCard label="Progressing" value={String(view.progressing)} />
-        <SummaryCard label="Regressing" value={String(view.regressing)} />
-      </div>
-
-      <ChartCard
-        title="Session volume"
-        description="Total kg × reps per training day in the last 90 days."
-      >
-        <CategoryBarChart
-          rows={volumeRows}
-          ariaLabel="Session volume over the last 90 days"
-          yLabel="Volume (kg)"
-        />
-      </ChartCard>
-
-      <Card>
-        <CardHeader className="border-b">
-          <CardTitle>Biggest movers</CardTitle>
-          <CardDescription>
-            First vs last session in the last 90 days.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="px-0">
+      <div className="mt-4 grid gap-4 lg:grid-cols-[3fr_2fr]">
+        <ChartCard title="Session volume (kg)">
+          <CategoryBarChart
+            rows={volumeRows}
+            ariaLabel="Session volume over the last 90 days"
+            yLabel="Volume (kg)"
+          />
+        </ChartCard>
+        <div className="overflow-hidden rounded-lg border bg-card">
+          <div className="border-b px-4 py-3">
+            <h2 className="text-sm font-semibold">Top movers</h2>
+          </div>
           {topMovers.length === 0 ? (
             <p className="px-4 py-6 text-sm text-muted-foreground">
               Log at least two sessions to see progress.
             </p>
           ) : (
-            <ul>
-              {topMovers.map((row) => (
-                <li
-                  key={row.exerciseId}
-                  className="flex items-center justify-between gap-3 border-b px-4 py-2.5 last:border-0"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{row.exerciseName}</p>
-                    <p className="text-xs text-muted-foreground tabular-nums">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/60 text-left">
+                <tr>
+                  <th className="eyebrow px-4 py-2">Exercise</th>
+                  <th className="eyebrow px-3 py-2">First</th>
+                  <th className="eyebrow px-3 py-2">Last</th>
+                  <th className="eyebrow px-3 py-2">Change</th>
+                  <th className="eyebrow px-3 py-2">Trend</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topMovers.map((row) => (
+                  <tr key={row.exerciseId} className="border-t">
+                    <td className="px-4 py-2 align-middle font-medium">
+                      {row.exerciseName}
+                    </td>
+                    <td className="px-3 py-2 align-middle text-muted-foreground num whitespace-nowrap">
+                      {describePoint(row.first, row.metric)}
+                    </td>
+                    <td className="px-3 py-2 align-middle text-muted-foreground num whitespace-nowrap">
+                      {describePoint(row.last, row.metric)}
+                    </td>
+                    <td className="px-3 py-2 align-middle num whitespace-nowrap">
                       {changeLabel(row)}
-                    </p>
-                  </div>
-                  <TrendBadge trend={row.trend} />
-                </li>
-              ))}
-            </ul>
+                    </td>
+                    <td className="px-3 py-2 align-middle">
+                      <TrendBadge trend={row.trend} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <ActionCard
-          to="/today"
-          icon={CalendarDays}
-          title="Log today"
-          body="Open the session table and fill sets."
-        />
-        <ActionCard
-          to="/charts"
-          icon={ChartLine}
-          title="Open charts"
-          body="Filter by day, range, and exercise."
-        />
-        <ActionCard
-          to="/history"
-          icon={History}
-          title="History"
-          body="Fix a mistyped set or delete a day."
-        />
-        <ActionCard
-          to="/programs"
-          icon={LayoutList}
-          title="Programs"
-          body="Edit the Home routine days and lifts."
-        />
-        <ActionCard
-          to="/import"
-          icon={Upload}
-          title="Import"
-          body="Bring in Excel or CSV history."
-        />
+      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+        {[
+          { to: '/programs', label: 'Programs', icon: LayoutList },
+          { to: '/history', label: 'History', icon: History },
+          { to: '/charts', label: 'Charts', icon: ChartLine },
+          { to: '/import', label: 'Import', icon: Upload },
+        ].map((item) => (
+          <Link
+            key={item.to}
+            to={item.to}
+            className="group flex items-center gap-3 rounded-lg border bg-card px-4 py-3 text-sm font-medium hover:border-primary/40"
+          >
+            <item.icon className="size-4 text-primary" />
+            {item.label}
+            <ArrowRight className="ml-auto size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+          </Link>
+        ))}
+      </div>
+
+      <div className="mt-4 overflow-hidden rounded-lg border bg-card">
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <h2 className="text-sm font-semibold">Recent trainings</h2>
+          <Button asChild variant="ghost" size="sm" className="h-7 text-primary">
+            <Link to="/history">
+              All history
+              <ArrowRight className="size-3.5" />
+            </Link>
+          </Button>
+        </div>
+        {recentSessions.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-muted-foreground">
+            Finish a session to see it here.
+          </p>
+        ) : (
+          <div className="divide-y">
+            {recentSessions.map((row) => {
+              const rowDay = sessionDay(row)
+              const setCount = sessionSets.filter(
+                (set) => set.sessionId === row.id && isFilledSet(set),
+              ).length
+              return (
+                <Link
+                  key={row.id}
+                  to={`/history/${row.id}`}
+                  className="flex items-center gap-4 px-4 py-2.5 hover:bg-muted/50"
+                >
+                  <span className="w-36 text-sm font-medium num">
+                    {formatDate(row.performedOn)}
+                  </span>
+                  <span className="flex-1 text-sm text-muted-foreground num">
+                    {rowDay?.name ?? 'Session'} · {setCount} sets
+                  </span>
+                  <ChevronRight className="size-4 text-muted-foreground" />
+                </Link>
+              )
+            })}
+          </div>
+        )}
       </div>
     </div>
-  )
-}
-
-function ActionCard({
-  to,
-  icon: Icon,
-  title,
-  body,
-}: {
-  to: string
-  icon: typeof CalendarDays
-  title: string
-  body: string
-}) {
-  return (
-    <Link
-      to={to}
-      className="rounded-xl ring-1 ring-foreground/10 hover:bg-muted"
-    >
-      <Card className="h-full ring-0">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Icon className="size-4" />
-            {title}
-          </CardTitle>
-          <CardDescription>{body}</CardDescription>
-        </CardHeader>
-      </Card>
-    </Link>
   )
 }

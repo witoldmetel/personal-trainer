@@ -1,14 +1,15 @@
 import { createId } from '@/lib/ids'
 import { supabase } from '@/lib/supabase'
-import type {
-  Exercise,
-  Program,
-  ProgramDay,
-  ProgramExercise,
-  Session,
-  SessionSet,
-  SessionStatus,
-  StoreState,
+import {
+  isFilledSet,
+  type Exercise,
+  type Program,
+  type ProgramDay,
+  type ProgramExercise,
+  type Session,
+  type SessionSet,
+  type SessionStatus,
+  type StoreState,
 } from '@/lib/types'
 
 export const emptyGym: StoreState = {
@@ -121,7 +122,7 @@ export async function loadGym(): Promise<StoreState> {
     await throwIfError(result.error)
   }
 
-  const state: StoreState = {
+  const built: StoreState = {
     programs: ((programs.data ?? []) as ProgramRow[]).map((row) => ({
       id: row.id,
       name: row.name,
@@ -164,6 +165,7 @@ export async function loadGym(): Promise<StoreState> {
     })),
   }
 
+  const state = await dropEmptyDoneSessions(built)
   const missing = deriveMissingProgramExercises(state)
   const withMissing = {
     ...state,
@@ -465,6 +467,27 @@ export async function persistRemoveSession(sessionId: string) {
   await throwIfError(error)
 }
 
+async function dropEmptyDoneSessions(state: StoreState): Promise<StoreState> {
+  const filledIds = new Set(
+    state.sessionSets.filter(isFilledSet).map((set) => set.sessionId),
+  )
+  const empty = state.sessions.filter(
+    (session) => session.status === 'done' && !filledIds.has(session.id),
+  )
+  if (empty.length === 0) return state
+  for (const session of empty) {
+    await persistRemoveSession(session.id)
+  }
+  const emptyIds = new Set(empty.map((session) => session.id))
+  return {
+    ...state,
+    sessions: state.sessions.filter((session) => !emptyIds.has(session.id)),
+    sessionSets: state.sessionSets.filter(
+      (set) => !emptyIds.has(set.sessionId),
+    ),
+  }
+}
+
 export async function persistRenameExercise(exerciseId: string, name: string) {
   const { error } = await client()
     .from('exercises')
@@ -577,10 +600,15 @@ export async function persistImport(next: StoreState, previous: StoreState) {
       uses_weight: row.usesWeight,
     })
   }
+  const sessionIdsWithSets = new Set(
+    next.sessionSets.filter(isFilledSet).map((set) => set.sessionId),
+  )
   await insertChunked(
     'sessions',
     next.sessions
-      .filter((row) => !prevSessionIds.has(row.id))
+      .filter(
+        (row) => !prevSessionIds.has(row.id) && sessionIdsWithSets.has(row.id),
+      )
       .map((row) => ({
         id: row.id,
         user_id: uid,

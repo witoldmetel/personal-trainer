@@ -44,6 +44,10 @@ export type SessionSet = {
   weightKg: number | null
 }
 
+export function isFilledSet(set: SessionSet): boolean {
+  return set.reps != null && set.reps > 0
+}
+
 export type LoggerRow = {
   setId: string
   sessionId: string

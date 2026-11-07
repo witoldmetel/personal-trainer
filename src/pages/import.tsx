@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { FileSpreadsheet } from 'lucide-react'
+import { Check, CloudUpload } from 'lucide-react'
+import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
 import {
   Select,
   SelectContent,
@@ -45,44 +47,71 @@ export function ImportPage() {
       : parsed?.allRows ?? []
   const preview = mappedRows.slice(0, 12)
 
-  return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-4">
-      <div>
-        <h1 className="text-base font-medium">Import</h1>
-        <p className="text-sm text-muted-foreground">
-          Excel becomes an archive. This app is the system of record. Best
-          format: one row per set (date, day, exercise, set, reps, weight).
-          Average To Jacked wide sheets are detected automatically.
-        </p>
-      </div>
+  const steps = [
+    { n: 1 as const, label: 'Upload' },
+    { n: 2 as const, label: 'Map columns' },
+    { n: 3 as const, label: 'Preview' },
+  ]
 
-      <ol className="flex gap-3 text-xs text-muted-foreground">
-        <li className={step === 1 ? 'font-medium text-foreground' : ''}>
-          1. Upload
-        </li>
-        <li className={step === 2 ? 'font-medium text-foreground' : ''}>
-          2. Map columns
-        </li>
-        <li className={step === 3 ? 'font-medium text-foreground' : ''}>
-          3. Preview
-        </li>
+  return (
+    <div className="mx-auto max-w-3xl">
+      <PageHeader
+        title="Import"
+        subtitle="Bring in your spreadsheet history."
+      />
+
+      <ol className="mb-6 flex items-center">
+        {steps.map((item, index) => {
+          const done = step > item.n
+          const current = step === item.n
+          return (
+            <li key={item.n} className="flex items-center">
+              {index > 0 ? (
+                <span className="mx-3 hidden h-px w-16 bg-border sm:block" />
+              ) : null}
+              <span
+                className={cn(
+                  'grid size-6 place-items-center rounded-full text-xs font-semibold',
+                  (done || current) && 'bg-primary text-primary-foreground',
+                  !done && !current && 'bg-muted text-muted-foreground',
+                )}
+              >
+                {done ? <Check className="size-3.5" /> : item.n}
+              </span>
+              <span
+                className={cn(
+                  'ml-2 text-sm',
+                  current ? 'font-medium' : 'text-muted-foreground',
+                )}
+              >
+                {item.label}
+              </span>
+            </li>
+          )
+        })}
       </ol>
 
       {step === 1 ? (
         <div className="flex flex-col gap-3">
-          <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed px-6 py-12 text-center hover:bg-muted/40">
-            <FileSpreadsheet className="size-8 text-muted-foreground" />
-            <span className="text-sm font-medium">Drop .xlsx or .csv here</span>
-            <span className="text-xs text-muted-foreground">
-              Tall log, or an Average To Jacked workbook with Day 1–4 sheets.
-            </span>
-            <Input
-              type="file"
-              accept=".xlsx,.xls,.csv,.html"
-              className="hidden"
-              onChange={(e) => void onFile(e.target.files?.[0])}
-            />
-          </label>
+          <div className="rounded-lg border bg-card p-4">
+            <label className="flex min-h-[240px] cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border px-6 py-16 text-center transition-colors hover:border-primary/50 hover:bg-primary-soft/40">
+              <CloudUpload className="size-8 text-primary" />
+              <span className="text-sm font-semibold">
+                Drop a file or click to browse
+              </span>
+              <span className="text-xs text-muted-foreground">.xlsx / .csv</span>
+              <span className="max-w-sm text-xs text-muted-foreground">
+                Works with a tall log (one row per set) or the Average To Jacked
+                Day 1–4 sheets.
+              </span>
+              <Input
+                type="file"
+                accept=".xlsx,.xls,.csv,.html"
+                className="hidden"
+                onChange={(e) => void onFile(e.target.files?.[0])}
+              />
+            </label>
+          </div>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
         </div>
       ) : null}
@@ -97,7 +126,7 @@ export function ImportPage() {
               Match your spreadsheet columns, then preview.
             </p>
           ) : (
-            <div className="overflow-hidden rounded-lg border">
+            <div className="overflow-hidden rounded-lg border bg-card">
               <table className="w-full text-sm">
                 <thead className="bg-muted/50 text-left text-muted-foreground">
                   <tr>
@@ -160,7 +189,7 @@ export function ImportPage() {
               Match your spreadsheet columns, then preview.
             </p>
           ) : (
-            <div className="overflow-x-auto rounded-lg border">
+            <div className="overflow-x-auto rounded-lg border bg-card">
               <table className="w-full text-sm">
                 <thead className="bg-muted/50 text-left text-muted-foreground">
                   <tr>

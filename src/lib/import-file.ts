@@ -209,7 +209,7 @@ function parseAtjSheet(
       const goalReps = parseWhole(row[2], 1, 100)
       if (goalReps != null) current.targetReps = goalReps
     }
-    for (let col = 2; col < row.length; col++) {
+    for (let col = 3; col < row.length; col++) {
       const reps = parseWhole(row[col], 1, 100)
       if (reps == null) continue
       const weightKg =

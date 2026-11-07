@@ -222,13 +222,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       lastTimeFor,
       loggerRows,
       todaySession: () =>
-        state.sessions.find((s) => s.performedOn === todayIso()),
+        state.sessions.find(
+          (s) =>
+            s.performedOn === todayIso() &&
+            (s.status === 'in_progress' || s.id.startsWith('live_')),
+        ),
       sessionDay: (session) =>
         session.programDayId
           ? state.programDays.find((d) => d.id === session.programDayId)
           : undefined,
       startSession: (programDayId) => {
-        const id = createId('ses')
+        const id = createId('live')
         const dayExercises = state.programExercises
           .filter((pe) => pe.programDayId === programDayId)
           .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -660,11 +664,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
 
         for (const [key, group] of groups) {
+          if (group.length === 0) continue
           const [date, dayKey] = key.split('|')
           const day = ensureDay(group[0]?.dayName ?? dayKey)
           let session = sessions.find(
             (ses) => ses.performedOn === date && ses.programDayId === day.id,
           )
+          let created = false
           if (!session) {
             session = {
               id: createId('ses'),
@@ -672,9 +678,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               performedOn: date,
               status: 'done',
             }
-            sessions.push(session)
-            sessionsAdded += 1
+            created = true
           }
+          let addedHere = 0
           for (const row of group) {
             const exercise = ensureExercise(row.exerciseName)
             const onDay = programExercises.filter(
@@ -718,6 +724,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               weightKg: row.weightKg,
             })
             setsAdded += 1
+            addedHere += 1
+          }
+          if (created && addedHere > 0) {
+            sessions.push(session)
+            sessionsAdded += 1
           }
         }
 
