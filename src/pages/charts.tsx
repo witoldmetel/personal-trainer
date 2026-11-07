@@ -75,24 +75,33 @@ export function ChartsPage() {
 
   const selectedExercise = exercises.find((e) => e.id === exerciseId)
   const selectedMover = view.movers.find((row) => row.exerciseId === exerciseId)
+  const usesLoad = view.points.some((p) => p.bestWeightKg > 0)
   const loadRows = view.points.map((p) => ({
     date: p.date,
     dateIso: p.dateIso,
-    value: p.bestWeightKg,
+    value: usesLoad ? p.bestWeightKg : p.bestReps,
   }))
   const e1rmRows = view.points.map((p) => ({
     date: p.date,
     dateIso: p.dateIso,
     value: Math.round(p.e1rm * 10) / 10,
   }))
-  const exerciseVolumeRows = view.volumeSeries.map((p) => ({
-    label: p.dateLabel,
-    value: Math.round(p.volume),
-  }))
+  const exerciseVolumeRows = (
+    usesLoad || exerciseId === 'all'
+      ? view.volumeSeries.map((p) => ({
+          label: p.dateLabel,
+          value: Math.round(p.volume),
+        }))
+      : view.points.map((p) => ({
+          label: p.dateLabel,
+          value: p.totalReps,
+        }))
+  )
   const dayVolumeRows = view.dayVolume.map((p) => ({
     label: p.dayName,
     value: Math.round(p.volume),
   }))
+  const totalReps = view.points.reduce((sum, p) => sum + p.totalReps, 0)
 
   function toggleDay(id: string) {
     setDayIds((current) =>
@@ -105,7 +114,11 @@ export function ChartsPage() {
     <div>
       <PageHeader
         title="Charts"
-        subtitle="Pick an exercise to see its weight and 1RM trend."
+        subtitle={
+          exerciseId !== 'all' && !usesLoad
+            ? 'Reps over time for this lift — no weight logged.'
+            : 'Pick an exercise to see its weight and 1RM trend.'
+        }
       />
 
       <div className="mb-6 flex flex-wrap items-start gap-x-6 gap-y-4 rounded-lg border bg-card p-4 sm:flex-nowrap">
@@ -190,8 +203,16 @@ export function ChartsPage() {
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard label="Sessions" value={String(view.sessionCount)} />
         <SummaryCard
-          label="Volume (kg)"
-          value={view.totalVolume === 0 ? '—' : formatKg(view.totalVolume, 0)}
+          label={
+            exerciseId !== 'all' && !usesLoad ? 'Total reps' : 'Volume (kg)'
+          }
+          value={
+            exerciseId !== 'all' && !usesLoad
+              ? String(totalReps)
+              : view.totalVolume === 0
+                ? '—'
+                : formatKg(view.totalVolume, 0)
+          }
         />
         <SummaryCard
           label="Progressing"
@@ -235,7 +256,7 @@ export function ChartsPage() {
               />
             </ChartCard>
           </>
-        ) : (
+        ) : usesLoad ? (
           <>
             <ChartCard
               title={`Best weight · ${selectedExercise?.name ?? 'Exercise'}`}
@@ -268,6 +289,30 @@ export function ChartsPage() {
                 rows={exerciseVolumeRows}
                 ariaLabel="Exercise volume over time"
                 yLabel="Volume (kg)"
+              />
+            </ChartCard>
+          </>
+        ) : (
+          <>
+            <ChartCard
+              title={`Best reps · ${selectedExercise?.name ?? 'Exercise'}`}
+              description="Highest filled set each session. Dashed line is the trend."
+            >
+              <TimeSeriesChart
+                rows={loadRows}
+                ariaLabel="Best reps over time"
+                yLabel="reps"
+                showTrend
+              />
+            </ChartCard>
+            <ChartCard
+              title="Session reps"
+              description="Sum of filled reps each session."
+            >
+              <CategoryBarChart
+                rows={exerciseVolumeRows}
+                ariaLabel="Session reps over time"
+                yLabel="Reps"
               />
             </ChartCard>
           </>

@@ -21,6 +21,7 @@ export type ExerciseSessionPoint = {
   bestReps: number
   e1rm: number
   volume: number
+  totalReps: number
   setCount: number
 }
 
@@ -87,7 +88,7 @@ export function exerciseSessionPoints(input: {
     const byExercise = new Map<string, SessionSet[]>()
     for (const set of sessionSets) {
       if (set.sessionId !== session.id) continue
-      if (set.reps == null || set.weightKg == null) continue
+      if (set.reps == null || set.reps <= 0) continue
       if (filters.exerciseId !== 'all' && set.exerciseId !== filters.exerciseId) {
         continue
       }
@@ -100,12 +101,16 @@ export function exerciseSessionPoints(input: {
       let bestReps = 0
       let e1rm = 0
       let volume = 0
+      let totalReps = 0
       for (const set of sets) {
         const reps = set.reps ?? 0
         const weightKg = set.weightKg ?? 0
+        totalReps += reps
         volume += weightKg * reps
-        const estimate = epley1rm(weightKg, reps)
-        if (estimate > e1rm) e1rm = estimate
+        if (weightKg > 0) {
+          const estimate = epley1rm(weightKg, reps)
+          if (estimate > e1rm) e1rm = estimate
+        }
         if (weightKg > bestWeightKg || (weightKg === bestWeightKg && reps > bestReps)) {
           bestWeightKg = weightKg
           bestReps = reps
@@ -127,6 +132,7 @@ export function exerciseSessionPoints(input: {
         bestReps,
         e1rm,
         volume,
+        totalReps,
         setCount: sets.length,
       })
     }
