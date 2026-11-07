@@ -19,6 +19,8 @@ Product and stack decisions: [docs/prd.md](./docs/prd.md), [docs/tech-stack.md](
 | App | Vite, React 19, TypeScript |
 | Package manager | pnpm 11 |
 | UI | [shadcn/ui](https://ui.shadcn.com/) + Tailwind + lucide |
+| Motion | [Motion](https://motion.dev/) (`motion/react`) |
+| Dates | [date-fns](https://date-fns.org/) |
 | Tables / forms / charts | TanStack Table, Form, Charts |
 | Lint | Biome |
 | Excel | SheetJS (`xlsx`) |
@@ -45,7 +47,13 @@ VITE_ALLOWED_GITHUB_USERNAME=witoldmetel
 
 Never commit `.env`. Use the **anon / publishable** key only — not `service_role`.
 
-Apply [`supabase/migrations/20261106_init.sql`](supabase/migrations/20261106_init.sql) in the Supabase **SQL Editor** (Table Editor is not enough). Run the whole file, confirm it succeeds, then sign in again. If login says `public.profiles` is missing from the schema cache, the API has not seen the tables yet — re-run the file (it is safe to repeat; it reloads the cache).
+Apply these files in the Supabase **SQL Editor** (Table Editor is not enough), in order:
+
+1. [`supabase/migrations/20261106_init.sql`](supabase/migrations/20261106_init.sql) — tables, RLS, GitHub allowlist
+2. [`supabase/migrations/20261106_uses_weight.sql`](supabase/migrations/20261106_uses_weight.sql) — `program_exercises.uses_weight`
+3. [`supabase/migrations/20261107_program_day_weekday.sql`](supabase/migrations/20261107_program_day_weekday.sql) — `program_days.weekday`
+
+Run each file, confirm it succeeds, then sign in again. If login says `public.profiles` is missing from the schema cache, the API has not seen the tables yet — re-run the init file (it is safe to repeat; it reloads the cache). If Programs cannot save a weekday, run the weekday file and retry.
 
 | Script | What |
 |---|---|
@@ -60,12 +68,14 @@ Do not use npm or yarn. Lockfile is `pnpm-lock.yaml`.
 
 | Route | Page |
 |---|---|
-| `/dashboard` | Home: 90-day stats, volume, movers |
-| `/today` | Log today’s session |
-| `/programs` | Split days and lifts |
-| `/history` | Past sessions (delete a day) |
+| `/dashboard` | Home: 90-day volume and top movers, recent trainings |
+| `/today` | Log today’s live session (imported history does not take over Today) |
+| `/programs` | Split days, lifts (arrows + drag-and-drop), optional weekday per day |
+| `/history` | Past sessions; edit date; one session per calendar day |
 | `/charts` | Filters: range, program day, exercise |
-| `/import` | Excel / CSV |
+| `/import` | Excel / CSV (Average To Jacked wide sheets or tall logs) |
+
+One calendar day is one session. Program weekdays (for example Day 1 → Monday) stay on the program until you confirm **Update history**. Empty imported days (no filled sets) are not stored.
 
 ## Deploy
 

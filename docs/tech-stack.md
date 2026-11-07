@@ -7,7 +7,7 @@ This is the decision record for how the product is built. It exists so later pha
 
 **Constraints that drove the stack:** $0, hosted URL, GitHub login, SQL (spreadsheet-shaped data), desktop-quality tables, phone as a second client, **TanStack as the application layer**.
 
-**Current vs destination:** the clickable UI is a Vite + React Router SPA with in-memory data. Destination remains **TanStack Start** on Cloudflare Workers + Supabase. Do not treat the SPA as the long-term app shell.
+**Current vs destination:** the clickable UI is a Vite + React Router SPA. Programs, sessions, and sets live in **Supabase Postgres**. Destination remains **TanStack Start** on Cloudflare Workers + Supabase. Do not treat the SPA as the long-term app shell.
 
 ---
 
@@ -21,8 +21,10 @@ This is the decision record for how the product is built. It exists so later pha
 | Server state | **TanStack Query** | Cache, mutations, optimistic set logging |
 | Tables | **TanStack Table** | Spreadsheet-like session logger on desktop |
 | Forms | **TanStack Form** | Program / exercise editors with typed fields |
-| Charts (phase 2) | **TanStack Charts** (`@tanstack/charts`) | Same family as the rest of the UI; typed marks, no extra chart vendor |
+| Charts | **TanStack Charts** (`@tanstack/charts`) | Same family as the rest of the UI; typed marks, no extra chart vendor |
 | UI primitives | **[shadcn/ui](https://ui.shadcn.com/)** + **Tailwind CSS** | Official registry; copy into `src/components/ui`. Style: radix-nova (`components.json`). |
+| Motion | **[Motion](https://motion.dev/)** (`motion/react`) | Page enter, list fade-up, `Reorder` for program exercise drag-and-drop. Honor `prefers-reduced-motion`. |
+| Dates | **[date-fns](https://date-fns.org/)** | Parse, format, compare, and week math. Stored values are ISO `yyyy-MM-dd`. |
 | Lint / format | **[Biome](https://biomejs.dev/)** | One tool for lint + format. Config: `biome.json`. No ESLint, Prettier, or oxlint. |
 | Backend | **Supabase** (Postgres + Auth + Row Level Security) | GitHub login and a real database in one free project |
 | Hosting | **Cloudflare Workers** | Official TanStack Start partner; free tier; not static Pages (Start needs a server) |
@@ -41,7 +43,7 @@ flowchart TB
   Router --> Query[TanStack Query]
   Router --> Table[TanStack Table]
   Router --> Form[TanStack Form]
-  Router --> Charts[TanStack Charts phase 2]
+  Router --> Charts[TanStack Charts]
   Query --> Supabase[Supabase Postgres and Auth]
   SF --> Supabase
 ```
@@ -49,14 +51,14 @@ flowchart TB
 | Library | Phase | Use |
 |---|---|---|
 | Start | 1 | App shell, Vite build, SSR of the authenticated layout, deploy target |
-| Router | 1 | Routes: today, programs, history, import (later: charts, diet, settings) |
+| Router | 1 | Routes: dashboard, today, programs, history, charts, import (later: diet, settings) |
 | Query | 1 | Sessions, sets, programs; optimistic updates when logging a set |
 | Table | 1 | Dense set logger (one row per set, keyboard tab between cells) |
 | Form | 1 | Create/edit program days and exercises |
-| Charts | 2 | Volume, estimated 1RM, PRs — `defineChart` + React `Chart` |
+| Charts | 1 (dashboard + `/charts`) | Volume, load, estimated 1RM — `defineChart` + React `Chart` |
 | Virtual | later, only if needed | Long history lists; do not add in v1 |
 
-Do not add Next.js or a second chart library. React Router is only in the current Vite scaffold; drop it when migrating to Start. If a TanStack library covers the job, use it.
+Do not add Next.js, a second chart library, moment/dayjs/luxon, Framer Motion as a second package, or `@dnd-kit`. React Router is only in the current Vite scaffold; drop it when migrating to Start. If a TanStack library covers the job, use it.
 
 ## 3. Why these, not the alternatives
 
@@ -142,13 +144,13 @@ On Cloudflare Workers, do not read `process.env` at module scope. Inside server 
 
 ## 7. Local and production setup (outline)
 
-Phase 1 implementation will follow this outline; this doc does not run it yet.
+The Vite SPA already follows this outline. TanStack Start remains the destination app shell.
 
 ### Local
 
 1. Create a free Supabase project.
 2. Enable GitHub OAuth (GitHub OAuth App callback → Supabase).
-3. Apply SQL migrations for tables + RLS + allowlist.
+3. Apply SQL migrations in `supabase/migrations/` (init, `uses_weight`, `weekday`) for tables + RLS + allowlist.
 4. Scaffold **TanStack Start** (`@tanstack/react-start`) with the Cloudflare Vite plugin.
 5. `pnpm dev` (`vite dev`) with the two `VITE_*` variables.
 6. Sign in, import a copy of the Excel file, log a test session.
@@ -199,7 +201,7 @@ All of the above is on free tiers: Cloudflare Workers, Supabase Free, GitHub OAu
 
 ### TanStack Charts
 
-- Phase 2 only. Latest published line is 1.x (`@tanstack/charts` + `@tanstack/charts/react`).
+- Used on Dashboard and Charts. Latest published line is 1.x (`@tanstack/charts` + `@tanstack/charts/react`).
 - Pin a version and read that release’s docs; do not mix unreleased `main` APIs.
 
 ## 9. UI and tooling
@@ -216,7 +218,9 @@ All of the above is on free tiers: Cloudflare Workers, Supabase Free, GitHub OAu
 
 - **TanStack Table** for the session logger: keyboard tab between cells, one row per set, dense on desktop.
 - **TanStack Form** for program setup, not for every individual set (sets stay in the table).
-- **TanStack Charts** in phase 2: line/bar charts of volume and best sets from `session_sets`. No Recharts.
+- **TanStack Charts** on Dashboard and Charts: line/bar charts of volume and best sets from `session_sets`. No Recharts.
+- **Motion** (`motion/react`) for page enter, list stagger, and `Reorder` on program exercises. Keep arrow reorder. Do not add `@dnd-kit`.
+- **date-fns** for all calendar math. One session per calendar day.
 - Mobile: same routes and Query data; table stacks or becomes a compact card per exercise.
 
 ### Biome
@@ -232,7 +236,7 @@ No rewrite of programs, sessions, or sets.
 
 | Phase | Add | Do not change |
 |---|---|---|
-| **2 Visualizations** | Routes under Start + **TanStack Charts** reading `session_sets` | Logger UX, schema of sets (views/aggregates only) |
+| **2 Visualizations** | More chart views under Start reading `session_sets` (dashboard/charts already exist in the SPA) | Logger UX, schema of sets (views/aggregates only) |
 | **3 Diet** | New tables (`foods`, `meals`, …) and Start routes | Workout tables |
 | **4 AI** | Settings field + Start **server function** holding the API key in a Worker secret | Key must never be committed or exposed as `VITE_*`; no project-paid model |
 
@@ -245,6 +249,8 @@ Charts and diet only **read** (or add adjacent tables to) the Phase 1 model. The
 - Google Sheets as a live backend
 - Next.js, Remix (React Router only until the Start migration)
 - Recharts / Chart.js / other chart kits
+- moment, dayjs, luxon (date-fns only)
+- Framer Motion as a second package, `@dnd-kit` (Motion `Reorder` only)
 - MUI, Chakra, Ant Design, DaisyUI, or a second component kit
 - ESLint, Prettier, oxlint (Biome is the only linter/formatter)
 - A custom Node/Express API
@@ -255,13 +261,14 @@ Charts and diet only **read** (or add adjacent tables to) the Phase 1 model. The
 
 ## 12. Repo layout
 
-Current scaffold (Vite SPA). Start migration will replace `src/pages` + React Router with `src/routes` and add `wrangler.jsonc` + `supabase/migrations/`.
+Current scaffold (Vite SPA). `wrangler.jsonc` and `supabase/migrations/` are already in the repo. Start migration will replace `src/pages` + React Router with `src/routes`.
 
 ```
 docs/prd.md
 docs/tech-stack.md
 .github/workflows/pipeline.yml
 wrangler.jsonc
+supabase/migrations/
 .cursor/rules/
   stack.mdc
   shadcn-ui.mdc
@@ -269,11 +276,14 @@ wrangler.jsonc
 biome.json
 components.json
 src/
-  pages/               # today, programs, history, import (Router until Start)
+  pages/               # dashboard, today, programs, history, charts, import
   components/
     ui/                # shadcn/ui primitives
     app-shell.tsx
     set-logger.tsx
+    motion-ui.tsx
   lib/
+    dates.ts           # date-fns wrappers
+    schedule.ts        # program weekdays → session dates
 vite.config.ts
 ```

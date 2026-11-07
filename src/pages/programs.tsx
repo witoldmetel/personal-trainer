@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm } from '@tanstack/react-form'
-import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, GripVertical, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Reorder, useDragControls, useReducedMotion } from 'motion/react'
 import { toast } from 'sonner'
+import { FadeIn, MotionRow } from '@/components/motion-ui'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -32,6 +34,7 @@ import {
   weekdayShort,
 } from '@/lib/schedule'
 import { useStore } from '@/lib/store'
+import type { Exercise, ProgramExercise } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const editIconClass =
@@ -78,6 +81,7 @@ export function ProgramsPage() {
     renameExercise,
     removeProgramExercise,
     moveProgramExercise,
+    reorderProgramExercises,
     updateProgramExerciseTargets,
   } = useStore()
   const [programId, setProgramId] = useState(programs[0]?.id ?? '')
@@ -152,9 +156,10 @@ export function ProgramsPage() {
               </Button>
             </div>
             <div className="flex-1 p-1.5">
-              {programs.map((program) => (
-                <div
+              {programs.map((program, index) => (
+                <MotionRow
                   key={program.id}
+                  index={index}
                   className={cn(
                     'group flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm',
                     program.id === programId
@@ -212,7 +217,7 @@ export function ProgramsPage() {
                       <Trash2 className="size-3.5" />
                     </Button>
                   </div>
-                </div>
+                </MotionRow>
               ))}
             </div>
           </section>
@@ -240,8 +245,9 @@ export function ProgramsPage() {
                 </p>
               ) : (
                 days.map((day, index) => (
-                  <div
+                  <MotionRow
                     key={day.id}
+                    index={index}
                     className={cn(
                       'group flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm',
                       day.id === dayId
@@ -302,7 +308,7 @@ export function ProgramsPage() {
                         <Trash2 className="size-3.5" />
                       </Button>
                     </div>
-                  </div>
+                  </MotionRow>
                 ))
               )}
             </div>
@@ -324,82 +330,32 @@ export function ProgramsPage() {
                 Add exercise
               </Button>
             </div>
-            <div className="flex-1 p-1.5">
-              {dayExercises.length === 0 ? (
-                <p className="px-3 py-6 text-sm text-muted-foreground">
-                  Add exercises with a sets × reps target.
-                </p>
-              ) : (
-                dayExercises.map((pe, index) => {
+            {dayExercises.length === 0 ? (
+              <p className="px-3 py-6 text-sm text-muted-foreground">
+                Add exercises with a sets × reps target.
+              </p>
+            ) : (
+              <ExerciseDayList
+                dayId={dayId}
+                source={dayExercises}
+                exercises={exercises}
+                onMove={moveProgramExercise}
+                onReorder={reorderProgramExercises}
+                onEdit={(pe) => {
                   const exercise = exercises.find((e) => e.id === pe.exerciseId)
-                  return (
-                    <div
-                      key={pe.id}
-                      className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm hover:bg-muted"
-                    >
-                      <span className="w-4 text-xs text-muted-foreground num">
-                        {index + 1}
-                      </span>
-                      <div className="flex-1">
-                        <div className="font-medium">
-                          {exercise?.name ?? 'Unknown'}
-                        </div>
-                        <div className="text-xs text-muted-foreground num">
-                          {pe.targetSets}×{pe.targetReps}
-                          {pe.usesWeight ? '' : ' · no weight'}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-0.5 text-muted-foreground">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="size-7"
-                          disabled={index === 0}
-                          onClick={() => moveProgramExercise(pe.id, 'up')}
-                        >
-                          <ArrowUp className="size-4" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="size-7"
-                          disabled={index === dayExercises.length - 1}
-                          onClick={() => moveProgramExercise(pe.id, 'down')}
-                        >
-                          <ArrowDown className="size-4" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className={editIconClass}
-                          onClick={() =>
-                            setDialog({
-                              type: 'rename',
-                              exerciseId: pe.exerciseId,
-                              name: exercise?.name ?? '',
-                              peId: pe.id,
-                              sets: pe.targetSets,
-                              reps: pe.targetReps,
-                              usesWeight: pe.usesWeight,
-                            })
-                          }
-                        >
-                          <Pencil className="size-3.5" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className={deleteIconClass}
-                          onClick={() => removeProgramExercise(pe.id)}
-                        >
-                          <Trash2 className="size-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  )
-                })
-              )}
-            </div>
+                  setDialog({
+                    type: 'rename',
+                    exerciseId: pe.exerciseId,
+                    name: exercise?.name ?? '',
+                    peId: pe.id,
+                    sets: pe.targetSets,
+                    reps: pe.targetReps,
+                    usesWeight: pe.usesWeight,
+                  })
+                }}
+                onRemove={removeProgramExercise}
+              />
+            )}
             {dayExercises.length > 0 ? (
               <div className="border-t px-4 py-2.5 text-xs text-muted-foreground">
                 Removing a lift from a day does not delete past sessions.
@@ -410,7 +366,8 @@ export function ProgramsPage() {
       )}
 
       {programs.length > 0 && days.length > 0 ? (
-        <section className="mt-4 rounded-lg border bg-card">
+        <FadeIn className="mt-4">
+        <section className="rounded-lg border bg-card">
           <div className="border-b px-4 py-2.5">
             <span className="eyebrow">Weekdays</span>
             {selectedProgram ? (
@@ -502,6 +459,7 @@ export function ProgramsPage() {
             </Button>
           </div>
         </section>
+        </FadeIn>
       ) : null}
 
       <EditorDialog
@@ -654,6 +612,158 @@ export function ProgramsPage() {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+function ExerciseDayList({
+  dayId,
+  source,
+  exercises,
+  onMove,
+  onReorder,
+  onEdit,
+  onRemove,
+}: {
+  dayId: string
+  source: ProgramExercise[]
+  exercises: Exercise[]
+  onMove: (id: string, direction: 'up' | 'down') => void
+  onReorder: (dayId: string, orderedIds: string[]) => void
+  onEdit: (pe: ProgramExercise) => void
+  onRemove: (id: string) => void
+}) {
+  const [items, setItems] = useState(source)
+  const itemsRef = useRef(items)
+  itemsRef.current = items
+
+  useEffect(() => {
+    setItems(source)
+  }, [source])
+
+  return (
+    <Reorder.Group
+      axis="y"
+      values={items}
+      onReorder={setItems}
+      className="flex-1 p-1.5"
+    >
+      {items.map((pe, index) => (
+        <ExerciseRow
+          key={pe.id}
+          pe={pe}
+          index={index}
+          last={index === items.length - 1}
+          name={
+            exercises.find((exercise) => exercise.id === pe.exerciseId)?.name ??
+            'Unknown'
+          }
+          onMove={onMove}
+          onEdit={() => onEdit(pe)}
+          onRemove={() => onRemove(pe.id)}
+          onDragEnd={() =>
+            onReorder(
+              dayId,
+              itemsRef.current.map((row) => row.id),
+            )
+          }
+        />
+      ))}
+    </Reorder.Group>
+  )
+}
+
+function ExerciseRow({
+  pe,
+  index,
+  last,
+  name,
+  onMove,
+  onEdit,
+  onRemove,
+  onDragEnd,
+}: {
+  pe: ProgramExercise
+  index: number
+  last: boolean
+  name: string
+  onMove: (id: string, direction: 'up' | 'down') => void
+  onEdit: () => void
+  onRemove: () => void
+  onDragEnd: () => void
+}) {
+  const controls = useDragControls()
+  const reduce = useReducedMotion()
+
+  return (
+    <Reorder.Item
+      value={pe}
+      dragListener={false}
+      dragControls={controls}
+      onDragEnd={onDragEnd}
+      whileDrag={
+        reduce
+          ? undefined
+          : {
+              scale: 1.02,
+              zIndex: 20,
+              boxShadow: '0 10px 28px oklch(0.2 0.02 160 / 0.14)',
+            }
+      }
+      className="relative mb-0.5 flex items-center gap-2 rounded-md bg-card px-2 py-2.5 text-sm hover:bg-muted"
+    >
+      <button
+        type="button"
+        aria-label={`Drag ${name} to reorder`}
+        className="grid size-7 shrink-0 cursor-grab touch-none place-items-center text-muted-foreground active:cursor-grabbing"
+        onPointerDown={(event) => controls.start(event)}
+      >
+        <GripVertical className="size-4" />
+      </button>
+      <span className="w-4 text-xs text-muted-foreground num">{index + 1}</span>
+      <div className="min-w-0 flex-1">
+        <div className="font-medium">{name}</div>
+        <div className="text-xs text-muted-foreground num">
+          {pe.targetSets}×{pe.targetReps}
+          {pe.usesWeight ? '' : ' · no weight'}
+        </div>
+      </div>
+      <div className="flex items-center gap-0.5 text-muted-foreground">
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-7"
+          disabled={index === 0}
+          onClick={() => onMove(pe.id, 'up')}
+        >
+          <ArrowUp className="size-4" />
+        </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-7"
+          disabled={last}
+          onClick={() => onMove(pe.id, 'down')}
+        >
+          <ArrowDown className="size-4" />
+        </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          className={editIconClass}
+          onClick={onEdit}
+        >
+          <Pencil className="size-3.5" />
+        </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          className={deleteIconClass}
+          onClick={onRemove}
+        >
+          <Trash2 className="size-3.5" />
+        </Button>
+      </div>
+    </Reorder.Item>
   )
 }
 

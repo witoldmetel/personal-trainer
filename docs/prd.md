@@ -1,11 +1,11 @@
 # Personal Trainer — Product Requirements Document
 
 Working title: **Personal Trainer**  
-Status: Phase 0 (documentation)  
+Status: Phase 1 in use (Vite SPA + Supabase); destination TanStack Start  
 Language: English  
 Audience: single user (the owner)
 
-This document defines what to build and in what order. Stack choices live in [tech-stack.md](./tech-stack.md). Implementation starts after this PRD is accepted. No application code ships in Phase 0.
+This document defines what to build and in what order. Stack choices live in [tech-stack.md](./tech-stack.md).
 
 ---
 
@@ -79,7 +79,7 @@ A fast, spreadsheet-like workout logger in the browser:
 2. Import Excel history into the database.
 3. Define a program (for example PPL) and its days and exercises.
 4. Start today’s session from that program and log sets, reps, and weight while training.
-5. Browse past sessions and see a **last time you did this exercise** hint (weight × reps) so load can progress. Full charts are phase 2.
+5. Browse past sessions and see a **last time you did this exercise** hint (weight × reps) so load can progress. Dashboard and Charts cover 90-day volume and movers.
 
 ```mermaid
 flowchart LR
@@ -100,21 +100,24 @@ flowchart LR
 
 ### Program
 
-- As the owner, I can create a program with named split days (e.g. Push A, Pull A, Legs A).
-- As the owner, I can put exercises on a day in a fixed order, with a default sets × reps target.
-- As the owner, I can add, rename, reorder, and remove exercises on a day without deleting historical sessions.
+- As the owner, I can create a program with named split days (e.g. Day 1–4).
+- As the owner, I can put exercises on a day in a fixed order, with a default sets × reps target, and skip weight on bodyweight lifts.
+- As the owner, I can add, rename, reorder (arrows or drag-and-drop), and remove exercises on a day without deleting historical sessions.
+- As the owner, I can assign a weekday to some or all program days (for example Day 1 always Monday, Day 4 always Friday), and choose whether to move existing history onto those weekdays.
 
 ### Logging
 
 - As the owner, I can start a session for today from a program day and see the day’s exercises pre-filled.
+- Imported history dated today does not take over the Today logger; Today is the live session.
 - As the owner, I can enter set number, reps, and weight as quickly as in Excel (keyboard-friendly table on desktop).
-- As the owner, I can mark a session done, or leave it in progress and continue later the same day.
+- As the owner, I can mark a session done only after at least one filled set, or delete today’s session and return to Start.
 - As the owner, I can see, for each exercise, what I lifted the last time I performed it.
 
 ### History
 
-- As the owner, I can open past sessions by date and by program day.
-- As the owner, I can edit a set I mistyped.
+- As the owner, I can open past sessions by date and by program day, with filters and pagination.
+- As the owner, I can edit a set I mistyped, or change a session’s date.
+- One calendar day is one session. History never keeps two workouts on the same date.
 
 ### Import
 
@@ -130,9 +133,9 @@ Units are stored as **kg**. This stays close to a spreadsheet so import is a col
 |---|---|---|
 | `profiles` | Owner row tied to GitHub auth | `id` (auth user), `github_username` |
 | `programs` | A named plan | `id`, `user_id`, `name` (e.g. “PPL 6-day”) |
-| `program_days` | Split day inside a program | `id`, `program_id`, `name` (e.g. “Push A”), `sort_order` |
+| `program_days` | Split day inside a program | `id`, `program_id`, `name` (e.g. “Day 1”), `sort_order`, `weekday` (optional ISO 1–7, Monday–Sunday) |
 | `exercises` | Canonical exercise names | `id`, `user_id`, `name`, `muscle_group` (optional) |
-| `program_exercises` | Exercise on a day | `id`, `program_day_id`, `exercise_id`, `sort_order`, `target_sets`, `target_reps` |
+| `program_exercises` | Exercise on a day | `id`, `program_day_id`, `exercise_id`, `sort_order`, `target_sets`, `target_reps`, `uses_weight` |
 | `sessions` | One workout | `id`, `user_id`, `program_day_id` (nullable for imported leftovers), `performed_on` (date), `status` (`in_progress` / `done`) |
 | `session_sets` | One set | `id`, `session_id`, `exercise_id`, `set_number`, `reps`, `weight_kg`, `note` (optional, unused in UI for v1 except import leftovers) |
 
@@ -140,8 +143,9 @@ Rules:
 
 - Deleting a program day must not delete past `sessions`.
 - Deleting an exercise that appears in history is not allowed; archive/hide instead if needed later.
-- One in-progress session per calendar date is enough for v1 (home gym, one session a day).
-- `session_sets.weight_kg` is numeric; reps are positive integers.
+- One session per calendar date (home gym). Duplicate dates are split; a date that already has a session cannot be saved again.
+- `weekday` is optional per program day. Saving it does not change history until the owner confirms **Update history**.
+- `session_sets.weight_kg` is numeric; a filled set is `reps > 0`. Skip-weight lifts omit load.
 
 ```mermaid
 erDiagram
@@ -158,13 +162,11 @@ erDiagram
 
 ## 9. Excel import
 
-v1 **must** import the existing spreadsheet so history is not abandoned.
+v1 **must** import the existing spreadsheet so history is not abandoned. Two layouts are supported.
 
-Until the file is attached, the importer is specified against this **assumed** shape (typical gym log). The mapping below is a default, not a locked schema.
+### Tall log
 
-### Assumed columns
-
-| Spreadsheet column (assumed) | Maps to |
+| Spreadsheet column | Maps to |
 |---|---|
 | Date | `sessions.performed_on` |
 | Workout / split / day | `program_days.name` (create program + days as needed) |
@@ -173,28 +175,20 @@ Until the file is attached, the importer is specified against this **assumed** s
 | Reps | `session_sets.reps` |
 | Weight | `session_sets.weight_kg` |
 
-If the sheet is **wide** (one row per session, Set1/Reps1/Weight1… columns) instead of **tall** (one row per set), the importer must unpivot. That is decided when the file is available.
+### Average To Jacked (wide)
+
+Sheets named Day 1, Day 2, … . Each **column** is one training cycle. Day 1, Day 2, Day 3 of the same column are consecutive calendar days. The next column is the next cycle. Weight comes from the kg band above the column. The workout-goal column is skipped. Dates in the sheet are used when present; otherwise columns are packed toward today.
 
 ### Import behaviour
 
 1. Upload `.xlsx` (and `.xls` / `.csv` if cheap to support).
 2. Show a preview: detected headers, sample rows, proposed mapping.
-3. Allow the owner to remap columns before commit.
+3. Allow the owner to remap columns before commit (tall files).
 4. Group rows into sessions by date + split day.
 5. Create missing exercises and program days rather than failing the whole file.
 6. Do not duplicate if the same date + day + exercise + set is imported twice (idempotent on that tuple).
-7. After a successful import, Excel is an archive. The app is the system of record.
-
-### Open mapping (blocked on the file)
-
-The owner will share the Excel file. When it arrives, this section must be updated with:
-
-- Exact sheet names
-- Exact header names
-- Tall vs wide layout
-- Date format
-- Weight unit already used (confirm kg)
-- Any extra columns to ignore in v1 (notes, rest, RPE, etc.)
+7. Do not store a day with zero filled sets. One calendar day is one session; colliding dates are bumped.
+8. After a successful import, Excel is an archive. The app is the system of record. Optional program weekdays can then be applied to history from Programs.
 
 ## 10. UX
 
@@ -202,7 +196,9 @@ The owner will share the Excel file. When it arrives, this section must be updat
 
 - Session logging is a **table**, not a wizard: one row per set, tab between cells, Enter to move down.
 - Program day exercises are pre-filled as empty set rows (or last-time weights as placeholders — last-time is visible, not auto-submitted).
-- Navigation: Today / Programs / History / Import. Settings can wait if GitHub login is enough.
+- Navigation: Dashboard / Today / Programs / History / Charts / Import.
+- Dashboard and Charts volume/movers use the last **90 days** unless the owner changes the Charts range.
+- Program exercises reorder with arrows and animated drag-and-drop.
 - Density should be closer to a spreadsheet than to a marketing site.
 
 ### Mobile (supported)
@@ -231,27 +227,25 @@ English only. No empty-state jokes; empty states say what to do next (create a p
 
 ## 12. Roadmap
 
-### Phase 0 — Documentation (this phase)
+### Phase 0 — Documentation (done)
 
 - This PRD
 - [tech-stack.md](./tech-stack.md)
-- Excel column map updated when the file is shared
 
-### Phase 1 — Now (implementation after docs)
+### Phase 1 — Logger (in use)
 
 - GitHub auth + allowlist
 - Schema above with RLS
-- Program and day editor
+- Program and day editor, weekday assignment, exercise drag-and-drop
 - Session logger (desktop table, mobile-usable)
 - Last-time hint per exercise
-- History list + session detail
-- Excel import with preview and remap
+- History list + session detail + date edit
+- Excel import (ATJ wide sheets and tall logs)
+- Dashboard 90-day volume and top movers; Charts page
 
-### Phase 2 — Visualizations
+### Phase 2 — Visualizations (more of)
 
-- Volume over time
-- Estimated 1RM / best set per exercise
-- Personal records
+- Richer volume / estimated 1RM / PR views
 - Optional bodyweight series if that data is added
 - Charts via **TanStack Charts** (see [tech-stack.md](./tech-stack.md))
 
@@ -282,8 +276,4 @@ v1 is done when the owner can:
 
 ## 14. Open questions
 
-1. **Excel column map** — blocked on the spreadsheet file. Assumed mapping is in §9.
-2. **Program name** for the imported history — derive from the file or ask once at import time?
-3. **Working title** — keep “Personal Trainer” or rename before first deploy?
-
-These do not block writing the docs. Question 1 blocks a complete importer, not the rest of Phase 1.
+Resolved: ATJ sheet layout is in §9. Imported programs default to **Home routine**. Working title stays **Personal Trainer**.

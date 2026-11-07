@@ -95,6 +95,7 @@ type StoreApi = StoreState & {
     programExerciseId: string,
     direction: 'up' | 'down',
   ) => void
+  reorderProgramExercises: (dayId: string, orderedIds: string[]) => void
   updateProgramExerciseTargets: (
     programExerciseId: string,
     targetSets: number,
@@ -594,6 +595,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             { id: current.id, sortOrder: other.sortOrder },
             { id: other.id, sortOrder: current.sortOrder },
           ]),
+        )
+      },
+      reorderProgramExercises: (dayId, orderedIds) => {
+        const current = state.programExercises
+          .filter((pe) => pe.programDayId === dayId)
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .map((pe) => pe.id)
+        if (
+          current.length === 0 ||
+          current.length !== orderedIds.length ||
+          current.every((id, index) => id === orderedIds[index])
+        ) {
+          return
+        }
+        const allowed = new Set(current)
+        if (orderedIds.some((id) => !allowed.has(id))) return
+        const order = new Map(orderedIds.map((id, index) => [id, index]))
+        setGym((s) => ({
+          ...s,
+          programExercises: s.programExercises.map((pe) => {
+            if (pe.programDayId !== dayId) return pe
+            const sortOrder = order.get(pe.id)
+            return sortOrder == null ? pe : { ...pe, sortOrder }
+          }),
+        }))
+        runPersist(() =>
+          persistProgramExerciseOrder(
+            orderedIds.map((id, sortOrder) => ({ id, sortOrder })),
+          ),
         )
       },
       updateProgramExerciseTargets: (

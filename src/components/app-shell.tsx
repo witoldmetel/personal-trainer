@@ -1,4 +1,5 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, useLocation, useOutlet } from 'react-router-dom'
+import { motion, useReducedMotion } from 'motion/react'
 import {
   CalendarDays,
   ChartLine,
@@ -22,6 +23,24 @@ const nav = [
   { to: '/charts', label: 'Charts', icon: ChartLine },
   { to: '/import', label: 'Import', icon: Upload },
 ]
+
+function AnimatedOutlet() {
+  const location = useLocation()
+  const outlet = useOutlet()
+  const reduce = useReducedMotion()
+  return (
+    <motion.div
+      key={location.pathname}
+      initial={reduce ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={
+        reduce ? { duration: 0 } : { duration: 0.2, ease: [0.22, 1, 0.36, 1] }
+      }
+    >
+      {outlet}
+    </motion.div>
+  )
+}
 
 export function AppShell() {
   const { username, signOut } = useAuth()
@@ -78,7 +97,7 @@ export function AppShell() {
           </div>
         </header>
         <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 pt-6 pb-24 md:px-8 md:pb-10">
-          <Outlet />
+          <AnimatedOutlet />
         </main>
       </div>
 

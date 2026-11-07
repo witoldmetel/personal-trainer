@@ -16,6 +16,7 @@ import {
   SummaryCard,
   TrendBadge,
 } from '@/components/progress-ui'
+import { FadeIn } from '@/components/motion-ui'
 import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
 import { compareIso, formatDate, isoDaysAgo, todayIso } from '@/lib/dates'
@@ -104,7 +105,7 @@ export function DashboardPage() {
       />
 
       <div className="grid gap-4 lg:grid-cols-[1.1fr_2fr]">
-        <div className="flex flex-col justify-between rounded-lg border border-primary/30 bg-primary-soft p-5">
+        <FadeIn className="flex flex-col justify-between rounded-lg border border-primary/30 bg-primary-soft p-5">
           <div>
             <div className="eyebrow text-primary">Today</div>
             <div className="mt-2 text-sm text-muted-foreground num">
@@ -135,9 +136,9 @@ export function DashboardPage() {
               <ArrowRight className="size-4" />
             </Link>
           </Button>
-        </div>
+        </FadeIn>
 
-        <div className="grid grid-cols-2 gap-4">
+        <FadeIn delay={0.05} className="grid grid-cols-2 gap-4">
           <SummaryCard
             label="Sessions"
             value={String(view.sessionCount)}
@@ -172,10 +173,11 @@ export function DashboardPage() {
             hint="lifts trending down"
             tone="down"
           />
-        </div>
+        </FadeIn>
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[3fr_2fr]">
+        <FadeIn delay={0.08}>
         <ChartCard title="Session volume (kg) · last 90 days">
           <CategoryBarChart
             rows={volumeRows}
@@ -183,7 +185,8 @@ export function DashboardPage() {
             yLabel="Volume (kg)"
           />
         </ChartCard>
-        <div className="overflow-hidden rounded-lg border bg-card">
+        </FadeIn>
+        <FadeIn delay={0.12} className="overflow-hidden rounded-lg border bg-card">
           <div className="border-b px-4 py-3">
             <h2 className="text-sm font-semibold">Top movers</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
@@ -230,10 +233,10 @@ export function DashboardPage() {
             </table>
             </div>
           )}
-        </div>
+        </FadeIn>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <FadeIn delay={0.16} className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         {[
           { to: '/programs', label: 'Programs', icon: LayoutList },
           { to: '/history', label: 'History', icon: History },
@@ -250,9 +253,9 @@ export function DashboardPage() {
             <ArrowRight className="ml-auto size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
           </Link>
         ))}
-      </div>
+      </FadeIn>
 
-      <div className="mt-4 overflow-hidden rounded-lg border bg-card">
+      <FadeIn delay={0.2} className="mt-4 overflow-hidden rounded-lg border bg-card">
         <div className="flex items-center justify-between border-b px-4 py-3">
           <h2 className="text-sm font-semibold">Recent trainings</h2>
           <Button asChild variant="ghost" size="sm" className="h-7 text-primary">
@@ -291,7 +294,7 @@ export function DashboardPage() {
             })}
           </div>
         )}
-      </div>
+      </FadeIn>
     </div>
   )
 }

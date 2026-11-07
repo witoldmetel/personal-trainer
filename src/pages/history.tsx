@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ArrowLeft, ChevronRight, Trash2 } from 'lucide-react'
 import { FilterChip } from '@/components/filter-chip'
+import { MotionRow } from '@/components/motion-ui'
 import { PageHeader } from '@/components/page-header'
 import { SetLogger } from '@/components/set-logger'
 import { Button } from '@/components/ui/button'
@@ -309,14 +310,15 @@ export function HistoryPage() {
       ) : (
         <div className="overflow-hidden rounded-lg border bg-card">
           <div className="divide-y">
-            {paged.map((session) => {
+            {paged.map((session, index) => {
               const day = sessionDay(session)
               const setCount = sessionSets.filter(
                 (set) => set.sessionId === session.id && isFilledSet(set),
               ).length
               return (
-                <div
+                <MotionRow
                   key={session.id}
+                  index={index}
                   className="group flex items-center gap-4 px-4 py-2.5 hover:bg-muted/50"
                 >
                   <Link
@@ -341,7 +343,7 @@ export function HistoryPage() {
                   >
                     <Trash2 className="size-3.5" />
                   </Button>
-                </div>
+                </MotionRow>
               )
             })}
           </div>
