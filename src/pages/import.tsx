@@ -19,10 +19,12 @@ import {
   type AppField,
   type ParsedSpreadsheet,
 } from '@/lib/import-file'
+import { activeProgram } from '@/lib/program'
 import { useStore } from '@/lib/store'
 
 export function ImportPage() {
-  const { importHistory } = useStore()
+  const { importHistory, programs } = useStore()
+  const program = activeProgram(programs)
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [parsed, setParsed] = useState<ParsedSpreadsheet | null>(null)
   const [mapping, setMapping] = useState<Partial<Record<AppField, string>>>({})
@@ -57,7 +59,11 @@ export function ImportPage() {
     <div className="mx-auto max-w-3xl">
       <PageHeader
         title="Import"
-        subtitle="Bring in your spreadsheet history."
+        subtitle={
+          program
+            ? `Adds sessions to ${program.name}. Set the active program in Programs first.`
+            : 'Bring in your spreadsheet history.'
+        }
       />
 
       <ol className="mb-6 flex items-center">

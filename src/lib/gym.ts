@@ -1,5 +1,6 @@
 import { compareIso, dateIso, isSameIsoDay, todayIso } from '@/lib/dates'
 import { createId } from '@/lib/ids'
+import { ProgramSettingsMigrationError } from '@/lib/program'
 import {
   parseIsoWeekday,
   spreadDuplicateDates,
@@ -27,7 +28,12 @@ export const emptyGym: StoreState = {
   sessionSets: [],
 }
 
-type ProgramRow = { id: string; name: string }
+type ProgramRow = {
+  id: string
+  name: string
+  is_active?: boolean | null
+  mover_pe_ids?: string[] | string | null
+}
 type ProgramDayRow = {
   id: string
   program_id: string
@@ -44,6 +50,7 @@ type ProgramExerciseRow = {
   target_sets: number
   target_reps: number
   uses_weight?: boolean | null
+  same_as_id?: string | null
 }
 type SessionRow = {
   id: string
@@ -104,6 +111,28 @@ function isUnknownWeekday(message: string): boolean {
   return /weekday/i.test(message)
 }
 
+function isUnknownProgramSettings(message: string): boolean {
+  return /is_active|mover_pe_ids|same_as_id/i.test(message)
+}
+
+function parseMoverPeIds(value: unknown): string[] {
+  const raw = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(value) as unknown
+          } catch {
+            return value.split(',').map((item) => item.trim())
+          }
+        })()
+      : []
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((item): item is string => typeof item === 'string' && item.length > 0)
+    .slice(0, 4)
+}
+
 function withoutUsesWeight<T extends object>(row: T): Omit<T, 'uses_weight'> {
   const next = { ...row } as T & { uses_weight?: unknown }
   delete next.uses_weight
@@ -116,6 +145,24 @@ function withoutWeekday<T extends object>(row: T): Omit<T, 'weekday'> {
   return next
 }
 
+function withoutSameAs<T extends object>(row: T): Omit<T, 'same_as_id'> {
+  const next = { ...row } as T & { same_as_id?: unknown }
+  delete next.same_as_id
+  return next
+}
+
+function withoutProgramFlags<T extends object>(
+  row: T,
+): Omit<T, 'is_active' | 'mover_pe_ids'> {
+  const next = { ...row } as T & {
+    is_active?: unknown
+    mover_pe_ids?: unknown
+  }
+  delete next.is_active
+  delete next.mover_pe_ids
+  return next
+}
+
 export async function loadGym(): Promise<StoreState> {
   const [
     programs,
@@ -125,7 +172,10 @@ export async function loadGym(): Promise<StoreState> {
     sessions,
     sessionSets,
   ] = await Promise.all([
-    fetchRows<ProgramRow>('programs', 'id, name'),
+    fetchRows<ProgramRow>(
+      'programs',
+      'id, name, is_active, mover_pe_ids',
+    ),
     fetchRows<ProgramDayRow>(
       'program_days',
       'id, program_id, name, sort_order, weekday',
@@ -133,7 +183,7 @@ export async function loadGym(): Promise<StoreState> {
     fetchRows<ExerciseRow>('exercises', 'id, name, muscle_group'),
     fetchRows<ProgramExerciseRow>(
       'program_exercises',
-      'id, program_day_id, exercise_id, sort_order, target_sets, target_reps, uses_weight',
+      'id, program_day_id, exercise_id, sort_order, target_sets, target_reps, uses_weight, same_as_id',
     ),
     fetchRows<SessionRow>(
       'sessions',
@@ -145,6 +195,11 @@ export async function loadGym(): Promise<StoreState> {
     ),
   ])
 
+  let programsResult = programs
+  if (programsResult.error && isUnknownProgramSettings(programsResult.error.message)) {
+    programsResult = await fetchRows<ProgramRow>('programs', 'id, name')
+  }
+
   let daysResult = programDays
   if (daysResult.error && isUnknownWeekday(daysResult.error.message)) {
     daysResult = await fetchRows<ProgramDayRow>(
@@ -154,7 +209,17 @@ export async function loadGym(): Promise<StoreState> {
   }
 
   let peResult = programExercises
-  if (peResult.error && /uses_weight/i.test(peResult.error.message)) {
+  if (
+    peResult.error &&
+    (isUnknownUsesWeight(peResult.error.message) ||
+      isUnknownProgramSettings(peResult.error.message))
+  ) {
+    peResult = await fetchRows<ProgramExerciseRow>(
+      'program_exercises',
+      'id, program_day_id, exercise_id, sort_order, target_sets, target_reps, uses_weight',
+    )
+  }
+  if (peResult.error && isUnknownUsesWeight(peResult.error.message)) {
     peResult = await fetchRows<ProgramExerciseRow>(
       'program_exercises',
       'id, program_day_id, exercise_id, sort_order, target_sets, target_reps',
@@ -162,7 +227,7 @@ export async function loadGym(): Promise<StoreState> {
   }
 
   for (const result of [
-    programs,
+    programsResult,
     daysResult,
     exercises,
     peResult,
@@ -173,9 +238,11 @@ export async function loadGym(): Promise<StoreState> {
   }
 
   const built: StoreState = {
-    programs: programs.data.map((row) => ({
+    programs: programsResult.data.map((row) => ({
       id: row.id,
       name: row.name,
+      isActive: row.is_active === true,
+      moverPeIds: parseMoverPeIds(row.mover_pe_ids),
     })),
     programDays: daysResult.data.map((row) => ({
       id: row.id,
@@ -197,6 +264,7 @@ export async function loadGym(): Promise<StoreState> {
       targetSets: row.target_sets,
       targetReps: row.target_reps,
       usesWeight: row.uses_weight !== false,
+      sameAsId: row.same_as_id ?? null,
     })),
     sessions: sessions.data.map((row) => ({
       id: row.id,
@@ -309,6 +377,7 @@ function deriveMissingProgramExercises(state: StoreState): ProgramExercise[] {
         targetSets,
         targetReps,
         usesWeight: exSets.some((set) => (set.weightKg ?? 0) > 0),
+        sameAsId: null,
       })
     }
   }
@@ -354,9 +423,45 @@ async function insertChunked(table: string, rows: object[], upsert = false) {
     if (
       table === 'program_exercises' &&
       first.error &&
+      isUnknownProgramSettings(first.error.message)
+    ) {
+      const stripped = chunk.map(withoutSameAs)
+      const retry = await db.from(table).insert(stripped)
+      if (retry.error && isUnknownUsesWeight(retry.error.message)) {
+        const { error } = await db
+          .from(table)
+          .insert(stripped.map(withoutUsesWeight))
+        await throwIfError(error)
+        continue
+      }
+      await throwIfError(retry.error)
+      continue
+    }
+    if (
+      table === 'program_exercises' &&
+      first.error &&
       isUnknownUsesWeight(first.error.message)
     ) {
-      const { error } = await db.from(table).insert(chunk.map(withoutUsesWeight))
+      const stripped = chunk.map(withoutUsesWeight)
+      const retry = await db.from(table).insert(stripped)
+      if (retry.error && isUnknownProgramSettings(retry.error.message)) {
+        const { error } = await db
+          .from(table)
+          .insert(stripped.map(withoutSameAs))
+        await throwIfError(error)
+        continue
+      }
+      await throwIfError(retry.error)
+      continue
+    }
+    if (
+      table === 'programs' &&
+      first.error &&
+      isUnknownProgramSettings(first.error.message)
+    ) {
+      const { error } = await db
+        .from(table)
+        .insert(chunk.map(withoutProgramFlags))
       await throwIfError(error)
       continue
     }
@@ -392,9 +497,50 @@ async function updateProgramExerciseRow(
 
 export async function persistProgram(program: Program) {
   const uid = await userId()
+  const db = client()
+  const full = await db.from('programs').insert({
+    id: program.id,
+    user_id: uid,
+    name: program.name,
+    is_active: program.isActive,
+    mover_pe_ids: program.moverPeIds,
+  })
+  if (full.error && isUnknownProgramSettings(full.error.message)) {
+    const { error } = await db
+      .from('programs')
+      .insert({ id: program.id, user_id: uid, name: program.name })
+    await throwIfError(error)
+    return
+  }
+  await throwIfError(full.error)
+}
+
+export async function persistActiveProgram(programId: string) {
+  const uid = await userId()
+  const db = client()
+  const clear = await db
+    .from('programs')
+    .update({ is_active: false })
+    .eq('user_id', uid)
+  if (clear.error && isUnknownProgramSettings(clear.error.message)) {
+    throw new ProgramSettingsMigrationError()
+  }
+  await throwIfError(clear.error)
+  const { error } = await db
+    .from('programs')
+    .update({ is_active: true })
+    .eq('id', programId)
+  await throwIfError(error)
+}
+
+export async function persistMoverPeIds(programId: string, ids: string[]) {
   const { error } = await client()
     .from('programs')
-    .insert({ id: program.id, user_id: uid, name: program.name })
+    .update({ mover_pe_ids: ids.slice(0, 4) })
+    .eq('id', programId)
+  if (error && isUnknownProgramSettings(error.message)) {
+    throw new ProgramSettingsMigrationError()
+  }
   await throwIfError(error)
 }
 
@@ -498,8 +644,23 @@ export async function persistProgramExercise(row: ProgramExercise) {
       target_sets: row.targetSets,
       target_reps: row.targetReps,
       uses_weight: row.usesWeight,
+      same_as_id: row.sameAsId,
     },
   ])
+}
+
+export async function persistProgramExerciseSameAs(
+  id: string,
+  sameAsId: string | null,
+) {
+  const { error } = await client()
+    .from('program_exercises')
+    .update({ same_as_id: sameAsId })
+    .eq('id', id)
+  if (error && isUnknownProgramSettings(error.message)) {
+    throw new ProgramSettingsMigrationError()
+  }
+  await throwIfError(error)
 }
 
 export async function persistSession(session: Session) {
@@ -732,7 +893,13 @@ export async function persistImport(next: StoreState, previous: StoreState) {
     'programs',
     next.programs
       .filter((row) => !prevProgramIds.has(row.id))
-      .map((row) => ({ id: row.id, user_id: uid, name: row.name })),
+      .map((row) => ({
+        id: row.id,
+        user_id: uid,
+        name: row.name,
+        is_active: row.isActive,
+        mover_pe_ids: row.moverPeIds,
+      })),
   )
   await insertChunked(
     'program_days',
@@ -771,6 +938,7 @@ export async function persistImport(next: StoreState, previous: StoreState) {
         target_sets: row.targetSets,
         target_reps: row.targetReps,
         uses_weight: row.usesWeight,
+        same_as_id: row.sameAsId,
       })),
   )
   const db = client()

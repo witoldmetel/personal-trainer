@@ -23,6 +23,12 @@ import {
   isoDaysAgo,
   todayIso,
 } from '@/lib/dates'
+import {
+  activeProgram,
+  programDayIds,
+  statsKeyForSet,
+  uniqueStatsExercises,
+} from '@/lib/program'
 import { useStore } from '@/lib/store'
 import { isFilledSet, type Session } from '@/lib/types'
 
@@ -40,7 +46,9 @@ export function HistoryPage({ sessionId }: { sessionId?: string }) {
     exercises,
     programDays,
     programExercises,
+    programs,
   } = useStore()
+  const program = activeProgram(programs)
   const [pending, setPending] = useState<Session | null>(null)
   const [preset, setPreset] = useState<RangePreset>('all')
   const [from, setFrom] = useState(() =>
@@ -70,31 +78,47 @@ export function HistoryPage({ sessionId }: { sessionId?: string }) {
   }
 
   const days = useMemo(
-    () => [...programDays].sort((a, b) => a.sortOrder - b.sortOrder),
-    [programDays],
+    () =>
+      programDays
+        .filter((day) => day.programId === program?.id)
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [programDays, program?.id],
+  )
+  const allowedDays = useMemo(
+    () => new Set(dayIds.length > 0 ? dayIds : programDayIds(program?.id, programDays)),
+    [dayIds, program?.id, programDays],
   )
 
-  const exerciseOptions = useMemo(() => {
-    const allowed =
-      dayIds.length === 0
-        ? new Set(exercises.map((e) => e.id))
-        : new Set(
-            programExercises
-              .filter((pe) => dayIds.includes(pe.programDayId))
-              .map((pe) => pe.exerciseId),
-          )
-    return [...exercises]
-      .filter((e) => allowed.has(e.id))
-      .sort((a, b) => a.name.localeCompare(b.name, 'en'))
-  }, [dayIds, exercises, programExercises])
+  const exerciseOptions = useMemo(
+    () =>
+      uniqueStatsExercises(
+        program?.id,
+        programDays,
+        programExercises,
+        exercises,
+        dayIds,
+      ),
+    [program?.id, programDays, programExercises, exercises, dayIds],
+  )
 
   const filtered = useMemo(() => {
+    const sessionsById = new Map(sessions.map((session) => [session.id, session]))
     const exerciseSessionIds =
       exerciseId === 'all'
         ? null
         : new Set(
             sessionSets
-              .filter((set) => set.exerciseId === exerciseId)
+              .filter((set) => {
+                const session = sessionsById.get(set.sessionId)
+                if (!session) return false
+                return (
+                  statsKeyForSet(
+                    session.programDayId,
+                    set.exerciseId,
+                    programExercises,
+                  ) === exerciseId
+                )
+              })
               .map((set) => set.sessionId),
           )
     return [...sessions]
@@ -104,9 +128,8 @@ export function HistoryPage({ sessionId }: { sessionId?: string }) {
         }
         if (!isIsoInRange(session.performedOn, from, to)) return false
         if (
-          dayIds.length > 0 &&
-          (session.programDayId == null ||
-            !dayIds.includes(session.programDayId))
+          session.programDayId == null ||
+          !allowedDays.has(session.programDayId)
         ) {
           return false
         }
@@ -119,7 +142,15 @@ export function HistoryPage({ sessionId }: { sessionId?: string }) {
         const byDate = compareIso(b.performedOn, a.performedOn)
         return byDate !== 0 ? byDate : a.id.localeCompare(b.id)
       })
-  }, [sessions, sessionSets, from, to, dayIds, exerciseId])
+  }, [
+    sessions,
+    sessionSets,
+    from,
+    to,
+    allowedDays,
+    exerciseId,
+    programExercises,
+  ])
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const safePage = Math.min(page, pageCount)
@@ -193,7 +224,11 @@ export function HistoryPage({ sessionId }: { sessionId?: string }) {
       <div>
         <PageHeader
           title="History"
-          subtitle="Every session you’ve logged or imported."
+          subtitle={
+            program
+              ? `Sessions from ${program.name}.`
+              : 'Every session you’ve logged or imported.'
+          }
         />
         <div className="rounded-lg border bg-card px-4 py-10 text-center">
           <p className="text-sm font-medium">No sessions yet</p>
@@ -220,7 +255,11 @@ export function HistoryPage({ sessionId }: { sessionId?: string }) {
     <div>
       <PageHeader
         title="History"
-        subtitle="Every session you’ve logged or imported."
+        subtitle={
+          program
+            ? `Sessions from ${program.name}.`
+            : 'Every session you’ve logged or imported.'
+        }
       />
 
       <div className="mb-6 flex flex-wrap items-start gap-x-6 gap-y-4 rounded-lg border bg-card p-4 sm:flex-nowrap">
@@ -295,7 +334,7 @@ export function HistoryPage({ sessionId }: { sessionId?: string }) {
             <option value="all">All exercises</option>
             {exerciseOptions.map((exercise) => (
               <option key={exercise.id} value={exercise.id}>
-                {exercise.name}
+                {exercise.label}
               </option>
             ))}
           </select>

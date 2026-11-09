@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { formatDate, todayIso } from '@/lib/dates'
+import { activeProgram } from '@/lib/program'
 import { weekdayShort } from '@/lib/schedule'
 import { useStore } from '@/lib/store'
 import { isFilledSet } from '@/lib/types'
@@ -32,7 +33,10 @@ export function TodayPage() {
     updateSessionDate,
   } = useStore()
   const session = todaySession()
-  const [dayId, setDayId] = useState(programDays[0]?.id ?? '')
+  const program = activeProgram(programs)
+  const [dayId, setDayId] = useState(
+    programDays.find((day) => day.programId === program?.id)?.id ?? '',
+  )
   const [confirmRemove, setConfirmRemove] = useState(false)
 
   if (programs.length === 0) {
@@ -51,8 +55,11 @@ export function TodayPage() {
 
   if (!session) {
     const days = programDays
-      .filter((d) => programs.some((p) => p.id === d.programId))
+      .filter((d) => d.programId === program?.id)
       .sort((a, b) => a.sortOrder - b.sortOrder)
+    const selectedDayId = days.some((day) => day.id === dayId)
+      ? dayId
+      : (days[0]?.id ?? '')
 
     return (
       <div>
@@ -60,36 +67,46 @@ export function TodayPage() {
         <div className="max-w-md rounded-lg border bg-card p-6">
           <div className="text-base font-medium">Start today’s session</div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Pick a day from {programs[0]?.name ?? 'your program'}.
+            {days.length === 0
+              ? `Add a day to ${program?.name ?? 'your program'} first.`
+              : `Pick a day from ${program?.name ?? 'your program'}.`}
           </p>
-          <label className="eyebrow mt-5 block" htmlFor="today-day">
-            Program day
-          </label>
-          <select
-            id="today-day"
-            className="mt-2 h-10 w-full rounded-md border border-input bg-card px-2 text-sm outline-none focus:ring-2 focus:ring-ring/30"
-            value={dayId}
-            onChange={(e) => setDayId(e.target.value)}
-          >
-            {days.map((day) => (
-              <option key={day.id} value={day.id}>
-                {day.name}
-                {weekdayShort(day.weekday)
-                  ? ` · ${weekdayShort(day.weekday)}`
-                  : ''}
-              </option>
-            ))}
-          </select>
-          <Button
-            className="mt-4 w-full"
-            disabled={!dayId}
-            onClick={() => {
-              if (dayId) startSession(dayId)
-            }}
-          >
-            <Play className="size-4" />
-            Start session
-          </Button>
+          {days.length > 0 ? (
+            <>
+              <label className="eyebrow mt-5 block" htmlFor="today-day">
+                Program day
+              </label>
+              <select
+                id="today-day"
+                className="mt-2 h-10 w-full rounded-md border border-input bg-card px-2 text-sm outline-none focus:ring-2 focus:ring-ring/30"
+                value={selectedDayId}
+                onChange={(e) => setDayId(e.target.value)}
+              >
+                {days.map((day) => (
+                  <option key={day.id} value={day.id}>
+                    {day.name}
+                    {weekdayShort(day.weekday)
+                      ? ` · ${weekdayShort(day.weekday)}`
+                      : ''}
+                  </option>
+                ))}
+              </select>
+              <Button
+                className="mt-4 w-full"
+                disabled={!selectedDayId}
+                onClick={() => {
+                  if (selectedDayId) startSession(selectedDayId)
+                }}
+              >
+                <Play className="size-4" />
+                Start session
+              </Button>
+            </>
+          ) : (
+            <Button asChild className="mt-4 w-full">
+              <Link to="/programs">Go to Programs</Link>
+            </Button>
+          )}
         </div>
       </div>
     )

@@ -8,7 +8,7 @@ export function PageSkeleton() {
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-4 w-72 max-w-full" />
       </div>
-      <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
+      <div className="grid gap-4 lg:grid-cols-[1.1fr_2fr]">
         <Skeleton className="h-44 rounded-lg" />
         <div className="grid grid-cols-2 gap-4">
           <Skeleton className="h-[5.5rem] rounded-lg" />
@@ -17,7 +17,7 @@ export function PageSkeleton() {
           <Skeleton className="h-[5.5rem] rounded-lg" />
         </div>
       </div>
-      <div className="mt-4 grid gap-4 lg:grid-cols-[3fr_2fr]">
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Skeleton className="h-64 rounded-lg" />
         <Skeleton className="h-64 rounded-lg" />
       </div>

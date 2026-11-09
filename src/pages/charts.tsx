@@ -12,14 +12,22 @@ import {
 } from '@/components/progress-ui'
 import { Input } from '@/components/ui/input'
 import { compareIso, isoDaysAgo, todayIso } from '@/lib/dates'
+import { activeProgram, uniqueStatsExercises } from '@/lib/program'
 import { useStore } from '@/lib/store'
 import { buildProgressView, formatKg, type DashboardFilters } from '@/lib/stats'
 
 type RangePreset = '30' | '90' | 'all' | 'custom'
 
 export function ChartsPage() {
-  const { sessions, sessionSets, exercises, programDays, programExercises } =
-    useStore()
+  const {
+    programs,
+    sessions,
+    sessionSets,
+    exercises,
+    programDays,
+    programExercises,
+  } = useStore()
+  const program = activeProgram(programs)
   const [preset, setPreset] = useState<RangePreset>('90')
   const [from, setFrom] = useState(isoDaysAgo(90))
   const [to, setTo] = useState(todayIso())
@@ -41,25 +49,32 @@ export function ChartsPage() {
   }
 
   const days = useMemo(
-    () => [...programDays].sort((a, b) => a.sortOrder - b.sortOrder),
-    [programDays],
+    () =>
+      programDays
+        .filter((day) => day.programId === program?.id)
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [programDays, program?.id],
   )
 
-  const exerciseOptions = useMemo(() => {
-    const allowed =
-      dayIds.length === 0
-        ? new Set(exercises.map((e) => e.id))
-        : new Set(
-            programExercises
-              .filter((pe) => dayIds.includes(pe.programDayId))
-              .map((pe) => pe.exerciseId),
-          )
-    return [...exercises]
-      .filter((e) => allowed.has(e.id))
-      .sort((a, b) => a.name.localeCompare(b.name, 'en'))
-  }, [dayIds, exercises, programExercises])
+  const exerciseOptions = useMemo(
+    () =>
+      uniqueStatsExercises(
+        program?.id,
+        programDays,
+        programExercises,
+        exercises,
+        dayIds,
+      ),
+    [program?.id, programDays, programExercises, exercises, dayIds],
+  )
 
-  const filters: DashboardFilters = { from, to, dayIds, exerciseId }
+  const filters: DashboardFilters = {
+    from,
+    to,
+    dayIds,
+    exerciseId,
+    programId: program?.id,
+  }
 
   const view = useMemo(
     () =>
@@ -68,12 +83,24 @@ export function ChartsPage() {
         sessionSets,
         exercises,
         programDays,
+        programExercises,
         filters,
       }),
-    [sessions, sessionSets, exercises, programDays, from, to, dayIds, exerciseId],
+    [
+      sessions,
+      sessionSets,
+      exercises,
+      programDays,
+      programExercises,
+      from,
+      to,
+      dayIds,
+      exerciseId,
+      program?.id,
+    ],
   )
 
-  const selectedExercise = exercises.find((e) => e.id === exerciseId)
+  const selectedExercise = exerciseOptions.find((item) => item.id === exerciseId)
   const selectedMover = view.movers.find((row) => row.exerciseId === exerciseId)
   const usesLoad = view.points.some((p) => p.bestWeightKg > 0)
   const loadRows = view.points.map((p) => ({
@@ -117,7 +144,9 @@ export function ChartsPage() {
         subtitle={
           exerciseId !== 'all' && !usesLoad
             ? 'Reps over time for this lift — no weight logged.'
-            : 'Pick an exercise to see its weight and 1RM trend.'
+            : program
+              ? `Progress for ${program.name}. Pick an exercise to see its trend.`
+              : 'Pick an exercise to see its weight and 1RM trend.'
         }
       />
 
@@ -193,7 +222,7 @@ export function ChartsPage() {
             <option value="all">All exercises</option>
             {exerciseOptions.map((exercise) => (
               <option key={exercise.id} value={exercise.id}>
-                {exercise.name}
+                {exercise.label}
               </option>
             ))}
           </select>
@@ -259,7 +288,7 @@ export function ChartsPage() {
         ) : usesLoad ? (
           <>
             <ChartCard
-              title={`Best weight · ${selectedExercise?.name ?? 'Exercise'}`}
+              title={`Best weight · ${selectedExercise?.label ?? 'Exercise'}`}
               description="Heaviest filled set each session. Dashed line is the trend."
             >
               <TimeSeriesChart
@@ -295,7 +324,7 @@ export function ChartsPage() {
         ) : (
           <>
             <ChartCard
-              title={`Best reps · ${selectedExercise?.name ?? 'Exercise'}`}
+              title={`Best reps · ${selectedExercise?.label ?? 'Exercise'}`}
               description="Highest filled set each session. Dashed line is the trend."
             >
               <TimeSeriesChart

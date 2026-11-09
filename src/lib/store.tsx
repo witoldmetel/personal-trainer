@@ -20,14 +20,17 @@ import {
 import {
   emptyGym,
   loadGym,
+  persistActiveProgram,
   persistDay,
   persistDayOrder,
   persistDayWeekday,
   persistExercise,
   persistImport,
+  persistMoverPeIds,
   persistProgram,
   persistProgramExercise,
   persistProgramExerciseOrder,
+  persistProgramExerciseSameAs,
   persistProgramExerciseTargets,
   persistRemoveDay,
   persistRemoveProgram,
@@ -46,6 +49,11 @@ import {
   persistSets,
 } from '@/lib/gym'
 import { createId } from '@/lib/ids'
+import {
+  activeProgram,
+  joinSameAsGroup,
+  leaveSameAsGroup,
+} from '@/lib/program'
 import { previewWeekdayHistory } from '@/lib/schedule'
 import type {
   IsoWeekday,
@@ -75,6 +83,12 @@ type StoreApi = StoreState & {
   addProgram: (name: string) => string
   renameProgram: (programId: string, name: string) => void
   removeProgram: (programId: string) => void
+  setActiveProgram: (programId: string) => Promise<void>
+  setMoverPeIds: (programId: string, ids: string[]) => Promise<void>
+  setProgramExerciseSameAs: (
+    programExerciseId: string,
+    sameAsId: string | null,
+  ) => Promise<void>
   addDay: (programId: string, name: string) => string
   renameDay: (dayId: string, name: string) => void
   setDayWeekday: (
@@ -402,7 +416,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       addProgram: (name) => {
         const id = createId('prog')
-        const program = { id, name }
+        const program = {
+          id,
+          name,
+          isActive: state.programs.length === 0,
+          moverPeIds: [],
+        }
         setGym((s) => ({ ...s, programs: [...s.programs, program] }))
         runPersist(() => persistProgram(program))
         return id
@@ -422,9 +441,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const dayIds = state.programDays
           .filter((day) => day.programId === programId)
           .map((day) => day.id)
+        const remaining = state.programs.filter(
+          (program) => program.id !== programId,
+        )
+        const needActive =
+          remaining.length > 0 && remaining.every((program) => !program.isActive)
+        const programs = remaining.map((program, index) =>
+          needActive ? { ...program, isActive: index === 0 } : program,
+        )
         setGym((s) => ({
           ...s,
-          programs: s.programs.filter((program) => program.id !== programId),
+          programs,
           programDays: s.programDays.filter((day) => day.programId !== programId),
           programExercises: s.programExercises.filter(
             (pe) => !dayIds.includes(pe.programDayId),
@@ -435,7 +462,72 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               : session,
           ),
         }))
-        runPersist(() => persistRemoveProgram(programId))
+        runPersist(async () => {
+          await persistRemoveProgram(programId)
+          if (needActive && programs[0]) {
+            await persistActiveProgram(programs[0].id)
+          }
+        })
+      },
+      setActiveProgram: (programId) => {
+        const previous = state.programs
+        setGym((s) => ({
+          ...s,
+          programs: s.programs.map((program) => ({
+            ...program,
+            isActive: program.id === programId,
+          })),
+        }))
+        return persistActiveProgram(programId).catch((error) => {
+          setGym((s) => ({ ...s, programs: previous }))
+          throw error
+        })
+      },
+      setMoverPeIds: (programId, ids) => {
+        const moverPeIds = [...new Set(ids)].slice(0, 4)
+        const previous =
+          state.programs.find((program) => program.id === programId)
+            ?.moverPeIds ?? []
+        setGym((s) => ({
+          ...s,
+          programs: s.programs.map((program) =>
+            program.id === programId ? { ...program, moverPeIds } : program,
+          ),
+        }))
+        return persistMoverPeIds(programId, moverPeIds).catch((error) => {
+          setGym((s) => ({
+            ...s,
+            programs: s.programs.map((program) =>
+              program.id === programId
+                ? { ...program, moverPeIds: previous }
+                : program,
+            ),
+          }))
+          throw error
+        })
+      },
+      setProgramExerciseSameAs: (programExerciseId, sameAsId) => {
+        const previous = state.programExercises
+        const next = sameAsId
+          ? joinSameAsGroup(previous, programExerciseId, sameAsId)
+          : leaveSameAsGroup(previous, programExerciseId)
+        if (next === previous) return Promise.resolve()
+        const changed = next.filter((row) => {
+          const prev = previous.find((item) => item.id === row.id)
+          return prev != null && prev.sameAsId !== row.sameAsId
+        })
+        if (changed.length === 0) return Promise.resolve()
+        setGym((s) => ({ ...s, programExercises: next }))
+        return (async () => {
+          try {
+            for (const row of changed) {
+              await persistProgramExerciseSameAs(row.id, row.sameAsId)
+            }
+          } catch (error) {
+            setGym((s) => ({ ...s, programExercises: previous }))
+            throw error
+          }
+        })()
       },
       addDay: (programId, name) => {
         const id = createId('day')
@@ -562,6 +654,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           targetSets,
           targetReps,
           usesWeight,
+          sameAsId: null,
         }
         setGym((s) => ({
           ...s,
@@ -591,11 +684,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const remaining = state.programExercises
           .filter((pe) => pe.id !== programExerciseId)
           .map((pe) => {
-            if (pe.programDayId !== target.programDayId) return pe
-            if (pe.sortOrder < target.sortOrder) return pe
-            return { ...pe, sortOrder: pe.sortOrder - 1 }
+            const cleared =
+              pe.sameAsId === programExerciseId ? { ...pe, sameAsId: null } : pe
+            if (cleared.programDayId !== target.programDayId) return cleared
+            if (cleared.sortOrder < target.sortOrder) return cleared
+            return { ...cleared, sortOrder: cleared.sortOrder - 1 }
           })
-        setGym((s) => ({ ...s, programExercises: remaining }))
+        setGym((s) => ({
+          ...s,
+          programExercises: remaining,
+          programs: s.programs.map((program) => ({
+            ...program,
+            moverPeIds: program.moverPeIds.filter(
+              (id) => id !== programExerciseId,
+            ),
+          })),
+        }))
         runPersist(async () => {
           await persistRemoveProgramExercise(programExerciseId)
           await persistProgramExerciseOrder(
@@ -603,6 +707,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               .filter((pe) => pe.programDayId === target.programDayId)
               .map((pe) => ({ id: pe.id, sortOrder: pe.sortOrder })),
           )
+          for (const program of state.programs) {
+            if (!program.moverPeIds.includes(programExerciseId)) continue
+            await persistMoverPeIds(
+              program.id,
+              program.moverPeIds.filter((id) => id !== programExerciseId),
+            )
+          }
         })
       },
       moveProgramExercise: (programExerciseId, direction) => {
@@ -694,9 +805,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const programExercises = [...state.programExercises]
         const sessions = [...state.sessions]
         const sessionSets = [...state.sessionSets]
-        let program = programs[0]
+        let program = activeProgram(programs) ?? programs[0]
         if (!program) {
-          program = { id: createId('prog'), name: 'Home routine' }
+          program = {
+            id: createId('prog'),
+            name: 'Home routine',
+            isActive: true,
+            moverPeIds: [],
+          }
           programs.push(program)
         }
 
@@ -794,6 +910,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 targetSets,
                 targetReps,
                 usesWeight,
+                sameAsId: null,
               })
             }
           }
@@ -870,6 +987,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 targetSets: row.setNumber,
                 targetReps: row.reps,
                 usesWeight: row.weightKg > 0,
+                sameAsId: null,
               })
             }
             const dup = sessionSets.find(

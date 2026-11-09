@@ -1,11 +1,13 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
+import { toast } from 'sonner'
 import {
   ArrowRight,
   ChartLine,
   ChevronRight,
   History,
   LayoutList,
+  Pencil,
   Upload,
 } from 'lucide-react'
 import { CategoryBarChart } from '@/components/progress-charts'
@@ -19,9 +21,26 @@ import {
 import { FadeIn } from '@/components/motion-ui'
 import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { compareIso, formatDate, isoDaysAgo, todayIso } from '@/lib/dates'
+import {
+  PROGRAM_SETTINGS_SQL,
+  ProgramSettingsMigrationError,
+  activeProgram,
+  programDayIds,
+  canonicalPeId,
+  uniqueStatsExercises,
+} from '@/lib/program'
 import { useStore } from '@/lib/store'
-import { buildProgressView, formatPct } from '@/lib/stats'
+import { buildProgressView, formatPct, pickMovers } from '@/lib/stats'
 import { isFilledSet } from '@/lib/types'
 
 export function DashboardPage() {
@@ -31,12 +50,19 @@ export function DashboardPage() {
     sessionSets,
     exercises,
     programDays,
+    programExercises,
     todaySession,
     sessionDay,
+    setMoverPeIds,
   } = useStore()
   const session = todaySession()
   const day = session ? sessionDay(session) : undefined
-  const program = programs.find((p) => p.id === day?.programId) ?? programs[0]
+  const program = activeProgram(programs)
+  const todayProgram =
+    programs.find((p) => p.id === day?.programId) ?? program
+  const [moversOpen, setMoversOpen] = useState(false)
+  const [draftMovers, setDraftMovers] = useState<string[]>([])
+  const [programSqlOpen, setProgramSqlOpen] = useState(false)
 
   const view = useMemo(
     () =>
@@ -45,14 +71,16 @@ export function DashboardPage() {
         sessionSets,
         exercises,
         programDays,
+        programExercises,
         filters: {
           from: isoDaysAgo(90),
           to: todayIso(),
           dayIds: [],
           exerciseId: 'all',
+          programId: program?.id,
         },
       }),
-    [sessions, sessionSets, exercises, programDays],
+    [sessions, sessionSets, exercises, programDays, programExercises, program?.id],
   )
 
   const prior = useMemo(
@@ -62,21 +90,37 @@ export function DashboardPage() {
         sessionSets,
         exercises,
         programDays,
+        programExercises,
         filters: {
           from: isoDaysAgo(180),
           to: isoDaysAgo(91),
           dayIds: [],
           exerciseId: 'all',
+          programId: program?.id,
         },
       }),
-    [sessions, sessionSets, exercises, programDays],
+    [sessions, sessionSets, exercises, programDays, programExercises, program?.id],
   )
 
   const volumeRows = view.volumeSeries.map((point) => ({
     label: point.dateLabel,
     value: Math.round(point.volume),
   }))
-  const topMovers = view.movers.slice(0, 5)
+  const topMovers = pickMovers(
+    program?.moverPeIds ?? [],
+    programExercises,
+    view.movers,
+  )
+  const moverOptions = uniqueStatsExercises(
+    program?.id,
+    programDays,
+    programExercises,
+    exercises,
+  )
+  const activeDayIds = useMemo(
+    () => new Set(programDayIds(program?.id, programDays)),
+    [program?.id, programDays],
+  )
   const todaySets = session
     ? sessionSets.filter((set) => set.sessionId === session.id)
     : []
@@ -86,22 +130,32 @@ export function DashboardPage() {
       ? (view.totalVolume - prior.totalVolume) / prior.totalVolume
       : 0
   const recentSessions = useMemo(() => {
-    const withSets = sessions.filter((row) =>
-      sessionSets.some((set) => set.sessionId === row.id && isFilledSet(set)),
-    )
+    const withSets = sessions.filter((row) => {
+      if (
+        row.programDayId == null ||
+        !activeDayIds.has(row.programDayId)
+      ) {
+        return false
+      }
+      return sessionSets.some((set) => set.sessionId === row.id && isFilledSet(set))
+    })
     return [...withSets]
       .sort((a, b) => {
         const byDate = compareIso(b.performedOn, a.performedOn)
         return byDate !== 0 ? byDate : a.id.localeCompare(b.id)
       })
       .slice(0, 4)
-  }, [sessions, sessionSets])
+  }, [sessions, sessionSets, activeDayIds])
 
   return (
     <div>
       <PageHeader
         title="Dashboard"
-        subtitle="Last 90 days of training, and today’s session."
+        subtitle={
+          program
+            ? `Last 90 days of ${program.name}, and today’s session.`
+            : 'Last 90 days of training, and today’s session.'
+        }
       />
 
       <div className="grid gap-4 lg:grid-cols-[1.1fr_2fr]">
@@ -113,7 +167,7 @@ export function DashboardPage() {
             </div>
             <div className="mt-1 text-xl font-semibold">
               {session
-                ? `${program?.name ?? 'Session'}${day ? ` · ${day.name}` : ''}`
+                ? `${todayProgram?.name ?? 'Session'}${day ? ` · ${day.name}` : ''}`
                 : 'No session yet'}
             </div>
             <div className="mt-3 text-sm text-muted-foreground">
@@ -176,7 +230,7 @@ export function DashboardPage() {
         </FadeIn>
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-[3fr_2fr]">
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <FadeIn delay={0.08}>
         <ChartCard title="Session volume (kg) · last 90 days">
           <CategoryBarChart
@@ -187,31 +241,59 @@ export function DashboardPage() {
         </ChartCard>
         </FadeIn>
         <FadeIn delay={0.12} className="overflow-hidden rounded-lg border bg-card">
-          <div className="border-b px-4 py-3">
-            <h2 className="text-sm font-semibold">Top movers</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              First vs last in the last 90 days.
-            </p>
+          <div className="flex items-start justify-between gap-2 border-b px-4 py-3">
+            <div>
+              <h2 className="text-sm font-semibold">Top movers</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Up to 4 lifts from {program?.name ?? 'the active program'}.
+              </p>
+            </div>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-7 text-primary hover:bg-primary-soft hover:text-primary"
+              disabled={!program || moverOptions.length === 0}
+              onClick={() => {
+                setDraftMovers(
+                  [
+                    ...new Set(
+                      (program?.moverPeIds ?? []).map((id) =>
+                        canonicalPeId(programExercises, id),
+                      ),
+                    ),
+                  ]
+                    .filter((id) =>
+                      moverOptions.some((option) => option.id === id),
+                    )
+                    .slice(0, 4),
+                )
+                setMoversOpen(true)
+              }}
+            >
+              <Pencil className="size-3.5" />
+            </Button>
           </div>
           {topMovers.length === 0 ? (
             <p className="px-4 py-6 text-sm text-muted-foreground">
-              Log at least two sessions to see progress.
+              {program?.moverPeIds.length
+                ? 'Log at least two sessions of the selected lifts to see progress.'
+                : 'Log at least two sessions to see progress.'}
             </p>
           ) : (
             <table className="w-full table-fixed text-sm">
               <thead className="bg-muted/60 text-left">
                 <tr>
-                  <th className="eyebrow px-4 py-2">Exercise</th>
-                  <th className="eyebrow w-20 px-3 py-2">First</th>
-                  <th className="eyebrow w-20 px-3 py-2">Last</th>
-                  <th className="eyebrow w-32 px-3 py-2">Change</th>
-                  <th className="eyebrow w-28 px-3 py-2">Trend</th>
+                  <th className="eyebrow w-[40%] px-4 py-2">Exercise</th>
+                  <th className="eyebrow w-16 px-3 py-2">First</th>
+                  <th className="eyebrow w-16 px-3 py-2">Last</th>
+                  <th className="eyebrow w-28 px-3 py-2">Change</th>
+                  <th className="eyebrow w-24 px-3 py-2">Trend</th>
                 </tr>
               </thead>
               <tbody>
                 {topMovers.map((row) => (
                   <tr key={row.exerciseId} className="border-t">
-                    <td className="max-w-0 px-4 py-2 align-middle font-medium">
+                    <td className="min-w-0 px-4 py-2 align-middle font-medium">
                       <span className="line-clamp-2" title={row.exerciseName}>
                         {row.exerciseName}
                       </span>
@@ -298,6 +380,105 @@ export function DashboardPage() {
           </div>
         )}
       </FadeIn>
+
+      <Dialog open={moversOpen} onOpenChange={setMoversOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Visible movers</DialogTitle>
+            <DialogDescription>
+              Pick up to 4 lifts from {program?.name ?? 'the active program'}.
+              Leave none selected to show the biggest movers automatically.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-80 space-y-2 overflow-auto">
+            {moverOptions.map((option) => {
+              const checked = draftMovers.includes(option.id)
+              const full = !checked && draftMovers.length >= 4
+              return (
+                <label
+                  key={option.id}
+                  className="flex items-center gap-2 text-sm"
+                >
+                  <Checkbox
+                    checked={checked}
+                    disabled={full}
+                    onCheckedChange={(value) => {
+                      setDraftMovers((current) => {
+                        if (value === true) {
+                          return current.includes(option.id)
+                            ? current
+                            : [...current, option.id].slice(0, 4)
+                        }
+                        return current.filter((id) => id !== option.id)
+                      })
+                    }}
+                  />
+                  <span className="min-w-0 truncate">{option.label}</span>
+                </label>
+              )
+            })}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setMoversOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                if (!program) return
+                void setMoverPeIds(program.id, draftMovers)
+                  .then(() => setMoversOpen(false))
+                  .catch((error) => {
+                    if (error instanceof ProgramSettingsMigrationError) {
+                      setMoversOpen(false)
+                      setProgramSqlOpen(true)
+                      return
+                    }
+                    toast.error('Could not save', {
+                      description:
+                        error instanceof Error ? error.message : 'Try again.',
+                    })
+                  })
+              }}
+            >
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={programSqlOpen} onOpenChange={setProgramSqlOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Add program settings columns</DialogTitle>
+            <DialogDescription>
+              Paste this in the Supabase SQL Editor, run it, then try again.
+            </DialogDescription>
+          </DialogHeader>
+          <pre className="max-h-48 overflow-auto rounded-md border bg-muted px-3 py-2 text-xs">
+            {PROGRAM_SETTINGS_SQL}
+          </pre>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                void navigator.clipboard.writeText(PROGRAM_SETTINGS_SQL)
+                toast.success('SQL copied')
+              }}
+            >
+              Copy SQL
+            </Button>
+            <Button type="button" onClick={() => setProgramSqlOpen(false)}>
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -23,7 +23,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
 import { PageHeader } from '@/components/page-header'
+import {
+  PROGRAM_SETTINGS_SQL,
+  ProgramSettingsMigrationError,
+  activeProgram,
+  canonicalPeId,
+  peSlotLabel,
+  programExercisesFor,
+  sameAsGroup,
+} from '@/lib/program'
 import {
   WEEKDAYS,
   WEEKDAY_MIGRATION_SQL,
@@ -34,7 +44,7 @@ import {
   weekdayShort,
 } from '@/lib/schedule'
 import { useStore } from '@/lib/store'
-import type { Exercise, ProgramExercise } from '@/lib/types'
+import type { Exercise, ProgramDay, ProgramExercise } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const editIconClass =
@@ -71,6 +81,8 @@ export function ProgramsPage() {
     addProgram,
     renameProgram,
     removeProgram,
+    setActiveProgram,
+    setProgramExerciseSameAs,
     sessions,
     addDay,
     renameDay,
@@ -84,14 +96,16 @@ export function ProgramsPage() {
     reorderProgramExercises,
     updateProgramExerciseTargets,
   } = useStore()
-  const [programId, setProgramId] = useState(programs[0]?.id ?? '')
+  const current = activeProgram(programs)
+  const [programId, setProgramId] = useState(current?.id ?? '')
   const [dayId, setDayId] = useState(
-    programDays.find((d) => d.programId === (programs[0]?.id ?? ''))?.id ?? '',
+    programDays.find((d) => d.programId === (current?.id ?? ''))?.id ?? '',
   )
   const [dialog, setDialog] = useState<DialogKind | null>(null)
   const [confirm, setConfirm] = useState<ConfirmKind | null>(null)
   const [applyOpen, setApplyOpen] = useState(false)
   const [migrationOpen, setMigrationOpen] = useState(false)
+  const [programSqlOpen, setProgramSqlOpen] = useState(false)
 
   const days = useMemo(
     () =>
@@ -110,6 +124,20 @@ export function ProgramsPage() {
 
   const selectedProgram = programs.find((p) => p.id === programId)
   const selectedDay = days.find((d) => d.id === dayId)
+  const programPe = useMemo(
+    () => programExercisesFor(programId, programDays, programExercises),
+    [programId, programDays, programExercises],
+  )
+
+  function handleProgramSettingsError(error: unknown) {
+    if (error instanceof ProgramSettingsMigrationError) {
+      setProgramSqlOpen(true)
+      return
+    }
+    toast.error('Could not save', {
+      description: error instanceof Error ? error.message : 'Try again.',
+    })
+  }
   const weekdayPreview = useMemo(
     () => previewWeekdayHistory(sessions, days),
     [sessions, days],
@@ -175,7 +203,14 @@ export function ProgramsPage() {
                   }}
                 >
                   <div className="min-w-0 flex-1">
-                    {program.name}
+                    <div className="flex items-center gap-2">
+                      <span className="truncate">{program.name}</span>
+                      {program.isActive ||
+                      (!programs.some((item) => item.isActive) &&
+                        program.id === current?.id) ? (
+                        <Badge variant="success">Active</Badge>
+                      ) : null}
+                    </div>
                     <div className="text-xs font-normal text-muted-foreground num">
                       {
                         programDays.filter((d) => d.programId === program.id)
@@ -188,6 +223,20 @@ export function ProgramsPage() {
                     className="flex items-center gap-0.5 text-muted-foreground"
                     onClick={(e) => e.stopPropagation()}
                   >
+                    {!program.isActive && programs.length > 1 ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-primary"
+                        onClick={() => {
+                          void setActiveProgram(program.id).catch(
+                            handleProgramSettingsError,
+                          )
+                        }}
+                      >
+                        Set active
+                      </Button>
+                    ) : null}
                     <Button
                       size="icon"
                       variant="ghost"
@@ -339,6 +388,13 @@ export function ProgramsPage() {
                 dayId={dayId}
                 source={dayExercises}
                 exercises={exercises}
+                programDays={programDays}
+                programExercises={programPe}
+                onSameAs={(peId, sameAsId) => {
+                  void setProgramExerciseSameAs(peId, sameAsId).catch(
+                    handleProgramSettingsError,
+                  )
+                }}
                 onMove={moveProgramExercise}
                 onReorder={reorderProgramExercises}
                 onEdit={(pe) => {
@@ -358,7 +414,10 @@ export function ProgramsPage() {
             )}
             {dayExercises.length > 0 ? (
               <div className="border-t px-4 py-2.5 text-xs text-muted-foreground">
-                Removing a lift from a day does not delete past sessions.
+                Same lift on two days stays separate in stats unless you pick
+                Same as — the match shows on every grouped day. Unlink with
+                Separate. Removing a lift from a day does not delete past
+                sessions.
               </div>
             ) : null}
           </section>
@@ -571,6 +630,35 @@ export function ProgramsPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={programSqlOpen} onOpenChange={setProgramSqlOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Add program settings columns</DialogTitle>
+            <DialogDescription>
+              Paste this in the Supabase SQL Editor, run it, then try again.
+            </DialogDescription>
+          </DialogHeader>
+          <pre className="max-h-48 overflow-auto rounded-md border bg-muted px-3 py-2 text-xs">
+            {PROGRAM_SETTINGS_SQL}
+          </pre>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                void navigator.clipboard.writeText(PROGRAM_SETTINGS_SQL)
+                toast.success('SQL copied')
+              }}
+            >
+              Copy SQL
+            </Button>
+            <Button type="button" onClick={() => setProgramSqlOpen(false)}>
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={applyOpen} onOpenChange={setApplyOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -619,6 +707,9 @@ function ExerciseDayList({
   dayId,
   source,
   exercises,
+  programDays,
+  programExercises,
+  onSameAs,
   onMove,
   onReorder,
   onEdit,
@@ -627,6 +718,9 @@ function ExerciseDayList({
   dayId: string
   source: ProgramExercise[]
   exercises: Exercise[]
+  programDays: ProgramDay[]
+  programExercises: ProgramExercise[]
+  onSameAs: (peId: string, sameAsId: string | null) => void
   onMove: (id: string, direction: 'up' | 'down') => void
   onReorder: (dayId: string, orderedIds: string[]) => void
   onEdit: (pe: ProgramExercise) => void
@@ -647,27 +741,67 @@ function ExerciseDayList({
       onReorder={setItems}
       className="flex-1 p-1.5"
     >
-      {items.map((pe, index) => (
-        <ExerciseRow
-          key={pe.id}
-          pe={pe}
-          index={index}
-          last={index === items.length - 1}
-          name={
-            exercises.find((exercise) => exercise.id === pe.exerciseId)?.name ??
-            'Unknown'
-          }
-          onMove={onMove}
-          onEdit={() => onEdit(pe)}
-          onRemove={() => onRemove(pe.id)}
-          onDragEnd={() =>
-            onReorder(
-              dayId,
-              itemsRef.current.map((row) => row.id),
-            )
-          }
-        />
-      ))}
+      {items.map((pe, index) => {
+        const group = sameAsGroup(programExercises, pe.id).sort((a, b) => {
+          const dayA =
+            programDays.find((day) => day.id === a.programDayId)?.sortOrder ?? 0
+          const dayB =
+            programDays.find((day) => day.id === b.programDayId)?.sortOrder ?? 0
+          if (dayA !== dayB) return dayA - dayB
+          return a.sortOrder - b.sortOrder
+        })
+        const partners = group.filter((member) => member.id !== pe.id)
+        const grouped = partners.length > 0
+        const groupValue = `group:${canonicalPeId(programExercises, pe.id)}`
+        const partnerLabel =
+          partners.length === 1
+            ? `Same as ${peSlotLabel(partners[0], exercises, programDays)}`
+            : `Grouped with ${partners
+                .map((member) => peSlotLabel(member, exercises, programDays))
+                .join(', ')}`
+        const sameAsOptions = grouped
+          ? []
+          : programExercises
+              .filter((other) => other.id !== pe.id)
+              .map((other) => {
+                const otherGroup = sameAsGroup(programExercises, other.id)
+                const label =
+                  otherGroup.length > 1
+                    ? `Join ${otherGroup
+                        .map((member) =>
+                          peSlotLabel(member, exercises, programDays),
+                        )
+                        .join(', ')}`
+                    : `Same as ${peSlotLabel(other, exercises, programDays)}`
+                return { id: other.id, label }
+              })
+        return (
+          <ExerciseRow
+            key={pe.id}
+            pe={pe}
+            index={index}
+            last={index === items.length - 1}
+            name={
+              exercises.find((exercise) => exercise.id === pe.exerciseId)
+                ?.name ?? 'Unknown'
+            }
+            grouped={grouped}
+            groupValue={groupValue}
+            partnerLabel={partnerLabel}
+            sameAsOptions={sameAsOptions}
+            onSameAs={onSameAs}
+            onMove={onMove}
+            onEdit={() => onEdit(pe)}
+            onRemove={() => onRemove(pe.id)}
+            onDragEnd={() =>
+              onReorder(
+                dayId,
+                itemsRef.current.map((row) => row.id),
+              )
+            }
+          />
+        )
+      })}
     </Reorder.Group>
   )
 }
@@ -677,6 +811,11 @@ function ExerciseRow({
   index,
   last,
   name,
+  grouped,
+  groupValue,
+  partnerLabel,
+  sameAsOptions,
+  onSameAs,
   onMove,
   onEdit,
   onRemove,
@@ -686,6 +825,11 @@ function ExerciseRow({
   index: number
   last: boolean
   name: string
+  grouped: boolean
+  groupValue: string
+  partnerLabel: string
+  sameAsOptions: Array<{ id: string; label: string }>
+  onSameAs: (peId: string, sameAsId: string | null) => void
   onMove: (id: string, direction: 'up' | 'down') => void
   onEdit: () => void
   onRemove: () => void
@@ -726,6 +870,38 @@ function ExerciseRow({
           {pe.targetSets}×{pe.targetReps}
           {pe.usesWeight ? '' : ' · no weight'}
         </div>
+        {grouped || sameAsOptions.length > 0 ? (
+          <Select
+            value={grouped ? groupValue : 'separate'}
+            onValueChange={(value) => {
+              if (value === 'separate') {
+                onSameAs(pe.id, null)
+                return
+              }
+              if (value.startsWith('group:')) return
+              onSameAs(pe.id, value)
+            }}
+          >
+            <SelectTrigger
+              size="sm"
+              className="mt-1.5 h-7 w-full max-w-56 text-xs"
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <SelectValue placeholder="Separate in stats" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="separate">Separate in stats</SelectItem>
+              {grouped ? (
+                <SelectItem value={groupValue}>{partnerLabel}</SelectItem>
+              ) : null}
+              {sameAsOptions.map((option) => (
+                <SelectItem key={option.id} value={option.id}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
       </div>
       <div className="flex items-center gap-0.5 text-muted-foreground">
         <Button

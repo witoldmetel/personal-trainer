@@ -1,11 +1,24 @@
 import { compareIso, formatChartDate, isIsoInRange, parseIsoDate } from '@/lib/dates'
-import type { Exercise, ProgramDay, Session, SessionSet } from '@/lib/types'
+import {
+  canonicalPeId,
+  peLabel,
+  programDayIds,
+  programExercisesFor,
+} from '@/lib/program'
+import type {
+  Exercise,
+  ProgramDay,
+  ProgramExercise,
+  Session,
+  SessionSet,
+} from '@/lib/types'
 
 export type DashboardFilters = {
   from: string
   to: string
   dayIds: string[]
   exerciseId: string
+  programId?: string
 }
 
 export type ExerciseSessionPoint = {
@@ -60,19 +73,32 @@ export function exerciseSessionPoints(input: {
   sessionSets: SessionSet[]
   exercises: Exercise[]
   programDays: ProgramDay[]
+  programExercises?: ProgramExercise[]
   filters: DashboardFilters
 }): ExerciseSessionPoint[] {
-  const { sessions, sessionSets, exercises, programDays, filters } = input
-  const exerciseName = new Map(exercises.map((e) => [e.id, e.name] as const))
+  const {
+    sessions,
+    sessionSets,
+    exercises,
+    programDays,
+    programExercises = [],
+    filters,
+  } = input
   const dayName = new Map(programDays.map((d) => [d.id, d.name] as const))
+  const allowedDays =
+    filters.dayIds.length > 0
+      ? new Set(filters.dayIds)
+      : filters.programId
+        ? new Set(programDayIds(filters.programId, programDays))
+        : null
   const matching = sessions
     .filter((session) => {
       if (!isIsoInRange(session.performedOn, filters.from, filters.to)) {
         return false
       }
       if (
-        filters.dayIds.length > 0 &&
-        (session.programDayId == null || !filters.dayIds.includes(session.programDayId))
+        allowedDays &&
+        (session.programDayId == null || !allowedDays.has(session.programDayId))
       ) {
         return false
       }
@@ -83,20 +109,37 @@ export function exerciseSessionPoints(input: {
       return byDate !== 0 ? byDate : a.id.localeCompare(b.id)
     })
 
+  const scopedPes =
+    filters.programId != null
+      ? programExercisesFor(filters.programId, programDays, programExercises)
+      : programExercises
+  const peByDayExercise = new Map<string, ProgramExercise>()
+  for (const pe of scopedPes) {
+    peByDayExercise.set(`${pe.programDayId}:${pe.exerciseId}`, pe)
+  }
+
   const points: ExerciseSessionPoint[] = []
   for (const session of matching) {
-    const byExercise = new Map<string, SessionSet[]>()
+    const byKey = new Map<string, { pe: ProgramExercise | null; sets: SessionSet[] }>()
     for (const set of sessionSets) {
       if (set.sessionId !== session.id) continue
       if (set.reps == null || set.reps <= 0) continue
-      if (filters.exerciseId !== 'all' && set.exerciseId !== filters.exerciseId) {
+      const pe =
+        session.programDayId != null
+          ? (peByDayExercise.get(`${session.programDayId}:${set.exerciseId}`) ?? null)
+          : null
+      const statsKey = pe ? canonicalPeId(scopedPes, pe.id) : set.exerciseId
+      if (filters.exerciseId !== 'all' && statsKey !== filters.exerciseId) {
         continue
       }
-      const list = byExercise.get(set.exerciseId) ?? []
-      list.push(set)
-      byExercise.set(set.exerciseId, list)
+      const existing = byKey.get(statsKey)
+      if (existing) {
+        existing.sets.push(set)
+      } else {
+        byKey.set(statsKey, { pe, sets: [set] })
+      }
     }
-    for (const [exerciseId, sets] of byExercise) {
+    for (const [statsKey, { pe, sets }] of byKey) {
       let bestWeightKg = 0
       let bestReps = 0
       let e1rm = 0
@@ -126,8 +169,10 @@ export function exerciseSessionPoints(input: {
         programDayName: session.programDayId
           ? (dayName.get(session.programDayId) ?? 'Day')
           : 'Day',
-        exerciseId,
-        exerciseName: exerciseName.get(exerciseId) ?? 'Unknown',
+        exerciseId: statsKey,
+        exerciseName: pe
+          ? peLabel(pe, scopedPes, exercises, programDays)
+          : (exercises.find((e) => e.id === statsKey)?.name ?? 'Unknown'),
         bestWeightKg,
         bestReps,
         e1rm,
@@ -224,11 +269,30 @@ export function progressRows(points: ExerciseSessionPoint[]): ProgressRow[] {
   })
 }
 
+export function pickMovers(
+  ids: string[],
+  programExercises: ProgramExercise[],
+  movers: ProgressRow[],
+): ProgressRow[] {
+  const chosen = [
+    ...new Set(ids.map((id) => canonicalPeId(programExercises, id))),
+  ]
+    .filter((id) => programExercises.some((pe) => pe.id === id))
+    .slice(0, 4)
+  if (chosen.length === 0) return movers.slice(0, 4)
+  const byId = new Map(movers.map((row) => [row.exerciseId, row] as const))
+  return chosen.flatMap((id) => {
+    const row = byId.get(id)
+    return row ? [row] : []
+  })
+}
+
 export function buildProgressView(input: {
   sessions: Session[]
   sessionSets: SessionSet[]
   exercises: Exercise[]
   programDays: ProgramDay[]
+  programExercises?: ProgramExercise[]
   filters: DashboardFilters
 }) {
   const points = exerciseSessionPoints(input)

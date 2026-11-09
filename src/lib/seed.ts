@@ -9,7 +9,9 @@ import type {
   StoreState,
 } from '@/lib/types'
 
-const programs: Program[] = [{ id: 'prog_home', name: 'Home routine' }]
+const programs: Program[] = [
+  { id: 'prog_home', name: 'Home routine', isActive: true, moverPeIds: [] },
+]
 
 const programDays: ProgramDay[] = [
   { id: 'day_1', programId: 'prog_home', name: 'Day 1', sortOrder: 0, weekday: null },
@@ -62,6 +64,7 @@ function pe(
     targetSets,
     targetReps,
     usesWeight,
+    sameAsId: null,
   }
 }
 

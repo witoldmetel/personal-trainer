@@ -1,6 +1,8 @@
 export type Program = {
   id: string
   name: string
+  isActive: boolean
+  moverPeIds: string[]
 }
 
 export type IsoWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7
@@ -27,6 +29,7 @@ export type ProgramExercise = {
   targetSets: number
   targetReps: number
   usesWeight: boolean
+  sameAsId: string | null
 }
 
 export type SessionStatus = 'in_progress' | 'done'
