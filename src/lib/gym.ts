@@ -1,4 +1,4 @@
-import { compareIso, dateIso } from '@/lib/dates'
+import { compareIso, dateIso, isSameIsoDay, todayIso } from '@/lib/dates'
 import { createId } from '@/lib/ids'
 import {
   parseIsoWeekday,
@@ -75,6 +75,27 @@ async function throwIfError(error: { message: string } | null) {
   if (error) throw new Error(error.message)
 }
 
+const PAGE_SIZE = 1000
+
+async function fetchRows<T>(
+  table: string,
+  columns: string,
+): Promise<{ data: T[]; error: { message: string } | null }> {
+  const db = client()
+  const data: T[] = []
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const result = await db
+      .from(table)
+      .select(columns)
+      .order('id')
+      .range(from, from + PAGE_SIZE - 1)
+    if (result.error) return { data: [], error: result.error }
+    const chunk = (result.data ?? []) as T[]
+    data.push(...chunk)
+    if (chunk.length < PAGE_SIZE) return { data, error: null }
+  }
+}
+
 function isUnknownUsesWeight(message: string): boolean {
   return /uses_weight/i.test(message)
 }
@@ -96,7 +117,6 @@ function withoutWeekday<T extends object>(row: T): Omit<T, 'weekday'> {
 }
 
 export async function loadGym(): Promise<StoreState> {
-  const db = client()
   const [
     programs,
     programDays,
@@ -105,34 +125,40 @@ export async function loadGym(): Promise<StoreState> {
     sessions,
     sessionSets,
   ] = await Promise.all([
-    db.from('programs').select('id, name'),
-    db.from('program_days').select('id, program_id, name, sort_order, weekday'),
-    db.from('exercises').select('id, name, muscle_group'),
-    db
-      .from('program_exercises')
-      .select(
-        'id, program_day_id, exercise_id, sort_order, target_sets, target_reps, uses_weight',
-      ),
-    db.from('sessions').select('id, program_day_id, performed_on, status'),
-    db
-      .from('session_sets')
-      .select('id, session_id, exercise_id, set_number, reps, weight_kg'),
+    fetchRows<ProgramRow>('programs', 'id, name'),
+    fetchRows<ProgramDayRow>(
+      'program_days',
+      'id, program_id, name, sort_order, weekday',
+    ),
+    fetchRows<ExerciseRow>('exercises', 'id, name, muscle_group'),
+    fetchRows<ProgramExerciseRow>(
+      'program_exercises',
+      'id, program_day_id, exercise_id, sort_order, target_sets, target_reps, uses_weight',
+    ),
+    fetchRows<SessionRow>(
+      'sessions',
+      'id, program_day_id, performed_on, status',
+    ),
+    fetchRows<SessionSetRow>(
+      'session_sets',
+      'id, session_id, exercise_id, set_number, reps, weight_kg',
+    ),
   ])
 
   let daysResult = programDays
   if (daysResult.error && isUnknownWeekday(daysResult.error.message)) {
-    daysResult = await db
-      .from('program_days')
-      .select('id, program_id, name, sort_order')
+    daysResult = await fetchRows<ProgramDayRow>(
+      'program_days',
+      'id, program_id, name, sort_order',
+    )
   }
 
   let peResult = programExercises
   if (peResult.error && /uses_weight/i.test(peResult.error.message)) {
-    peResult = await db
-      .from('program_exercises')
-      .select(
-        'id, program_day_id, exercise_id, sort_order, target_sets, target_reps',
-      )
+    peResult = await fetchRows<ProgramExerciseRow>(
+      'program_exercises',
+      'id, program_day_id, exercise_id, sort_order, target_sets, target_reps',
+    )
   }
 
   for (const result of [
@@ -147,40 +173,38 @@ export async function loadGym(): Promise<StoreState> {
   }
 
   const built: StoreState = {
-    programs: ((programs.data ?? []) as ProgramRow[]).map((row) => ({
+    programs: programs.data.map((row) => ({
       id: row.id,
       name: row.name,
     })),
-    programDays: ((daysResult.data ?? []) as ProgramDayRow[]).map((row) => ({
+    programDays: daysResult.data.map((row) => ({
       id: row.id,
       programId: row.program_id,
       name: row.name,
       sortOrder: row.sort_order,
       weekday: parseIsoWeekday(row.weekday),
     })),
-    exercises: ((exercises.data ?? []) as ExerciseRow[]).map((row) => ({
+    exercises: exercises.data.map((row) => ({
       id: row.id,
       name: row.name,
       muscleGroup: row.muscle_group ?? undefined,
     })),
-    programExercises: ((peResult.data ?? []) as ProgramExerciseRow[]).map(
-      (row) => ({
-        id: row.id,
-        programDayId: row.program_day_id,
-        exerciseId: row.exercise_id,
-        sortOrder: row.sort_order,
-        targetSets: row.target_sets,
-        targetReps: row.target_reps,
-        usesWeight: row.uses_weight !== false,
-      }),
-    ),
-    sessions: ((sessions.data ?? []) as SessionRow[]).map((row) => ({
+    programExercises: peResult.data.map((row) => ({
+      id: row.id,
+      programDayId: row.program_day_id,
+      exerciseId: row.exercise_id,
+      sortOrder: row.sort_order,
+      targetSets: row.target_sets,
+      targetReps: row.target_reps,
+      usesWeight: row.uses_weight !== false,
+    })),
+    sessions: sessions.data.map((row) => ({
       id: row.id,
       programDayId: row.program_day_id,
       performedOn: dateIso(row.performed_on),
       status: row.status,
     })),
-    sessionSets: ((sessionSets.data ?? []) as SessionSetRow[]).map((row) => ({
+    sessionSets: sessionSets.data.map((row) => ({
       id: row.id,
       sessionId: row.session_id,
       exerciseId: row.exercise_id,
@@ -191,7 +215,8 @@ export async function loadGym(): Promise<StoreState> {
   }
 
   const emptied = await dropEmptyDoneSessions(built)
-  const state = await uniqueSessionDates(emptied)
+  const fresh = await dropStaleInProgress(emptied)
+  const state = await uniqueSessionDates(fresh)
   const missing = deriveMissingProgramExercises(state)
   const withMissing = {
     ...state,
@@ -202,9 +227,13 @@ export async function loadGym(): Promise<StoreState> {
     const prev = withMissing.programExercises.find((row) => row.id === pe.id)
     return prev != null && prev.usesWeight !== pe.usesWeight
   })
-  if (missing.length === 0 && changedFlags.length === 0) return state
-  const uid = await userId()
-  if (missing.length > 0) {
+  const next =
+    missing.length === 0 && changedFlags.length === 0
+      ? state
+      : { ...state, programExercises: flagged }
+  if (missing.length > 0 || changedFlags.length > 0) {
+    const uid = await userId()
+    if (missing.length > 0) {
     try {
       await insertChunked(
         'program_exercises',
@@ -246,7 +275,8 @@ export async function loadGym(): Promise<StoreState> {
       break
     }
   }
-  return { ...state, programExercises: flagged }
+  }
+  return ensureTodaySessionSets(next)
 }
 
 function deriveMissingProgramExercises(state: StoreState): ProgramExercise[] {
@@ -313,12 +343,14 @@ export async function ensureProfile(githubUsername: string) {
   await throwIfError(error)
 }
 
-async function insertChunked(table: string, rows: object[]) {
+async function insertChunked(table: string, rows: object[], upsert = false) {
   if (rows.length === 0) return
   const db = client()
   for (let i = 0; i < rows.length; i += 100) {
     const chunk = rows.slice(i, i + 100)
-    const first = await db.from(table).insert(chunk)
+    const first = upsert
+      ? await db.from(table).upsert(chunk)
+      : await db.from(table).insert(chunk)
     if (
       table === 'program_exercises' &&
       first.error &&
@@ -474,7 +506,7 @@ export async function persistSession(session: Session) {
   const uid = await userId()
   const { error } = await client()
     .from('sessions')
-    .insert({
+    .upsert({
       id: session.id,
       user_id: uid,
       program_day_id: session.programDayId,
@@ -498,6 +530,7 @@ export async function persistSets(sets: SessionSet[]) {
       reps: set.reps == null ? null : Math.round(set.reps),
       weight_kg: set.weightKg,
     })),
+    true,
   )
 }
 
@@ -535,6 +568,24 @@ export async function persistRemoveSession(sessionId: string) {
   await throwIfError(error)
 }
 
+export async function persistRemoveSet(setId: string) {
+  const { error } = await client().from('session_sets').delete().eq('id', setId)
+  await throwIfError(error)
+}
+
+export async function persistSetNumbers(
+  rows: Array<{ id: string; setNumber: number }>,
+) {
+  const db = client()
+  for (const row of rows) {
+    const { error } = await db
+      .from('session_sets')
+      .update({ set_number: row.setNumber })
+      .eq('id', row.id)
+    await throwIfError(error)
+  }
+}
+
 async function uniqueSessionDates(state: StoreState): Promise<StoreState> {
   const changes = spreadDuplicateDates(state.sessions, state.programDays)
   if (changes.length === 0) return state
@@ -554,6 +605,58 @@ async function uniqueSessionDates(state: StoreState): Promise<StoreState> {
       return performedOn ? { ...session, performedOn } : session
     }),
   }
+}
+
+async function dropStaleInProgress(state: StoreState): Promise<StoreState> {
+  const today = todayIso()
+  const stale = state.sessions.filter(
+    (session) =>
+      session.status === 'in_progress' &&
+      compareIso(session.performedOn, today) < 0,
+  )
+  if (stale.length === 0) return state
+  for (const session of stale) {
+    await persistRemoveSession(session.id)
+  }
+  const staleIds = new Set(stale.map((session) => session.id))
+  return {
+    ...state,
+    sessions: state.sessions.filter((session) => !staleIds.has(session.id)),
+    sessionSets: state.sessionSets.filter(
+      (set) => !staleIds.has(set.sessionId),
+    ),
+  }
+}
+
+async function ensureTodaySessionSets(state: StoreState): Promise<StoreState> {
+  const today = todayIso()
+  const live = state.sessions.filter(
+    (session) =>
+      session.status === 'in_progress' &&
+      isSameIsoDay(session.performedOn, today),
+  )
+  const added: SessionSet[] = []
+  let sessionSets = state.sessionSets
+  for (const session of live) {
+    if (sessionSets.some((set) => set.sessionId === session.id)) continue
+    const dayExercises = state.programExercises
+      .filter((pe) => pe.programDayId === session.programDayId)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+    const restored = dayExercises.flatMap((pe) =>
+      Array.from({ length: Math.max(pe.targetSets, 1) }, (_, i) => ({
+        id: createId('set'),
+        sessionId: session.id,
+        exerciseId: pe.exerciseId,
+        setNumber: i + 1,
+        reps: null,
+        weightKg: null,
+      })),
+    )
+    added.push(...restored)
+    sessionSets = [...sessionSets, ...restored]
+  }
+  if (added.length > 0) await persistSets(added)
+  return added.length === 0 ? state : { ...state, sessionSets }
 }
 
 async function dropEmptyDoneSessions(state: StoreState): Promise<StoreState> {

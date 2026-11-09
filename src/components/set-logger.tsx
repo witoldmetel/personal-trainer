@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useStore } from '@/lib/store'
 import type { LoggerRow } from '@/lib/types'
@@ -82,10 +82,13 @@ function filled(row: LoggerRow) {
 }
 
 export function SetLogger({ sessionId }: { sessionId: string }) {
-  const { loggerRows, programExercises, sessions, addSet } = useStore()
+  const { loggerRows, programExercises, sessions, addSet, removeSet } =
+    useStore()
   const data = useMemo(() => loggerRows(sessionId), [loggerRows, sessionId])
   const groups = groupedRows(data)
   const session = sessions.find((s) => s.id === sessionId)
+  const canRemoveSets =
+    session?.status === 'in_progress' || session?.id.startsWith('live_')
 
   return (
     <>
@@ -98,6 +101,11 @@ export function SetLogger({ sessionId }: { sessionId: string }) {
               <th className="eyebrow w-32 px-3 py-2.5">Reps</th>
               <th className="eyebrow w-36 px-3 py-2.5">Weight (kg)</th>
               <th className="eyebrow px-4 py-2.5">Last time</th>
+              {canRemoveSets ? (
+                <th className="eyebrow w-12 px-2 py-2.5">
+                  <span className="sr-only">Remove set</span>
+                </th>
+              ) : null}
             </tr>
           </thead>
           <tbody>
@@ -108,6 +116,7 @@ export function SetLogger({ sessionId }: { sessionId: string }) {
                     item.programDayId === session?.programDayId &&
                     item.exerciseId === row.exerciseId,
                 )
+                const canRemove = canRemoveSets && group.rows.length > 1
                 return (
                   <tr
                     key={row.setId}
@@ -153,6 +162,25 @@ export function SetLogger({ sessionId }: { sessionId: string }) {
                     <td className="px-4 py-1 text-muted-foreground num">
                       {row.lastTime ?? '—'}
                     </td>
+                    {canRemoveSets ? (
+                      <td className="px-1 py-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          disabled={!canRemove}
+                          className="size-7 text-destructive hover:bg-destructive/10 hover:text-destructive disabled:text-muted-foreground"
+                          aria-label={
+                            canRemove
+                              ? `Remove set ${row.setNumber}`
+                              : 'Keep at least one set'
+                          }
+                          onClick={() => removeSet(row.setId)}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </td>
+                    ) : null}
                   </tr>
                 )
               }),
@@ -171,33 +199,53 @@ export function SetLogger({ sessionId }: { sessionId: string }) {
               </div>
             </div>
             <div className="divide-y">
-              {group.rows.map((row) => (
-                <div
-                  key={row.setId}
-                  className={cn(
-                    'flex items-center gap-3 px-4 py-2',
-                    filled(row) && 'bg-primary-soft/70',
-                  )}
-                >
-                  <span className="w-12 text-xs text-muted-foreground num">
-                    Set {row.setNumber}
-                  </span>
-                  <NumberCell
-                    row={row}
-                    field="reps"
-                    col="reps"
-                    className="h-10 flex-1 border-input bg-background"
-                  />
-                  {row.usesWeight ? (
+              {group.rows.map((row) => {
+                const canRemove = canRemoveSets && group.rows.length > 1
+                return (
+                  <div
+                    key={row.setId}
+                    className={cn(
+                      'flex items-center gap-3 px-4 py-2',
+                      filled(row) && 'bg-primary-soft/70',
+                    )}
+                  >
+                    <span className="w-12 text-xs text-muted-foreground num">
+                      Set {row.setNumber}
+                    </span>
                     <NumberCell
                       row={row}
-                      field="weightKg"
-                      col="weight"
+                      field="reps"
+                      col="reps"
                       className="h-10 flex-1 border-input bg-background"
                     />
-                  ) : null}
-                </div>
-              ))}
+                    {row.usesWeight ? (
+                      <NumberCell
+                        row={row}
+                        field="weightKg"
+                        col="weight"
+                        className="h-10 flex-1 border-input bg-background"
+                      />
+                    ) : null}
+                    {canRemoveSets ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        disabled={!canRemove}
+                        className="size-8 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive disabled:text-muted-foreground"
+                        aria-label={
+                          canRemove
+                            ? `Remove set ${row.setNumber}`
+                            : 'Keep at least one set'
+                        }
+                        onClick={() => removeSet(row.setId)}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    ) : null}
+                  </div>
+                )
+              })}
             </div>
             <div className="px-2 py-1.5">
               <Button

@@ -1,5 +1,12 @@
 import * as XLSX from 'xlsx'
-import { addDaysIso, dateIso, isIsoDate, isoDaysAgo, nextFreeIso } from '@/lib/dates'
+import {
+  addDaysIso,
+  compareIso,
+  dateIso,
+  isIsoDate,
+  isoDaysAgo,
+  nextFreeIso,
+} from '@/lib/dates'
 import { isValid, parse } from 'date-fns'
 import type { ProgramPlanDay } from '@/lib/types'
 
@@ -71,9 +78,22 @@ function cellText(value: unknown): string {
 }
 
 export function parseNumber(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  const text = cellText(value).replace(/\s/g, '').replace('kg', '').replace('KG', '')
-  if (!text) return null
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null
+  }
+  if (value instanceof Date && isValid(value) && value.getFullYear() <= 1900) {
+    const serial = Math.round(
+      (Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()) -
+        Date.UTC(1899, 11, 30)) /
+        86400000,
+    )
+    if (serial >= 1 && serial <= 100) return serial
+    return null
+  }
+  const raw = cellText(value).replace(/\s/g, '')
+  if (!raw || /^nan$/i.test(raw) || raw.startsWith('#')) return null
+  const text = raw.replace(/kg$/i, '')
+  if (!/^-?\d+([.,]\d+)?$/.test(text)) return null
   const normalized = text.includes(',') && !text.includes('.')
     ? text.replace(',', '.')
     : text.replace(/,/g, '')
@@ -98,8 +118,23 @@ function parseWhole(value: unknown, min: number, max: number): number | null {
   return n
 }
 
+function parseGoalReps(value: unknown): number | null {
+  const text = cellText(value)
+  const match = text.match(/(\d+(?:\.\d+)?)/)
+  return parseWhole(match?.[1] ?? value, 1, 100)
+}
+
+function parseGoalKg(value: unknown): number | null {
+  const text = cellText(value)
+  const match = text.match(/@\s*([\d.,]+)\s*kg/i) ?? text.match(/([\d.,]+)\s*kg/i)
+  return match ? parseNumber(match[1]) : null
+}
+
 function parseDate(value: unknown): string | null {
-  if (value instanceof Date && isValid(value)) return dateIso(value)
+  if (value instanceof Date && isValid(value)) {
+    if (value.getFullYear() < 1970) return null
+    return dateIso(value)
+  }
   const text = cellText(value)
   if (isIsoDate(text)) return text
   const dmy = text.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/)
@@ -187,6 +222,21 @@ function atjDatesBySheet(
       used.add(date)
     }
   }
+  for (let dayIndex = 0; dayIndex < ordered.length; dayIndex++) {
+    const dates = result.get(ordered[dayIndex].name)
+    if (!dates) continue
+    let newest: string | null = null
+    for (let col = 3; col <= lastCol; col++) {
+      if (dates[col] && (!newest || compareIso(dates[col], newest) > 0)) {
+        newest = dates[col]
+      }
+    }
+    const next = newest
+      ? addDaysIso(newest, nDays)
+      : isoDaysAgo(Math.max(nDays - 1 - dayIndex, 0))
+    dates[2] = nextFreeIso(next, used)
+    used.add(dates[2])
+  }
   return result
 }
 
@@ -267,16 +317,17 @@ function parseAtjSheet(
     )
     if (current) {
       current.targetSets = Math.max(current.targetSets, setNumber)
-      const goalReps = parseWhole(row[2], 1, 100)
+      const goalReps = parseGoalReps(row[1])
       if (goalReps != null) current.targetReps = goalReps
     }
-    for (let col = 3; col < row.length; col++) {
+    const goalKg = parseGoalKg(row[1])
+    for (let col = 2; col < row.length; col++) {
       const reps = parseWhole(row[col], 1, 100)
       if (reps == null) continue
       const weightKg =
         col === 2
-          ? columnWeight(headerRow, headerRow.length - 1) ?? 0
-          : columnWeight(headerRow, col) ?? 0
+          ? (goalKg ?? columnWeight(headerRow, 3) ?? 0)
+          : (columnWeight(headerRow, col) ?? goalKg ?? 0)
       const date = sessionDates[col]
       if (!date) continue
       out.push({

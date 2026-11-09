@@ -33,6 +33,7 @@ import {
   persistRemoveProgram,
   persistRemoveProgramExercise,
   persistRemoveSession,
+  persistRemoveSet,
   persistRenameDay,
   persistRenameExercise,
   persistRenameProgram,
@@ -40,6 +41,7 @@ import {
   persistSessionDate,
   persistSessionDates,
   persistSessionStatus,
+  persistSetNumbers,
   persistSetPatch,
   persistSets,
 } from '@/lib/gym'
@@ -68,6 +70,7 @@ type StoreApi = StoreState & {
     patch: { reps?: number | null; weightKg?: number | null },
   ) => void
   addSet: (sessionId: string, exerciseId: string) => void
+  removeSet: (setId: string) => void
   removeSession: (sessionId: string) => void
   addProgram: (name: string) => string
   renameProgram: (programId: string, name: string) => void
@@ -357,6 +360,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         setGym((s) => ({ ...s, sessionSets: [...s.sessionSets, row] }))
         runPersist(() => persistSets([row]))
+      },
+      removeSet: (setId) => {
+        const target = state.sessionSets.find((set) => set.id === setId)
+        if (!target) return
+        const siblings = state.sessionSets
+          .filter(
+            (set) =>
+              set.sessionId === target.sessionId &&
+              set.exerciseId === target.exerciseId,
+          )
+          .sort((a, b) => a.setNumber - b.setNumber)
+        if (siblings.length <= 1) return
+        const remaining = siblings
+          .filter((set) => set.id !== setId)
+          .map((set, index) => ({ ...set, setNumber: index + 1 }))
+        const nextById = new Map(remaining.map((set) => [set.id, set]))
+        setGym((s) => ({
+          ...s,
+          sessionSets: s.sessionSets
+            .filter((set) => set.id !== setId)
+            .map((set) => nextById.get(set.id) ?? set),
+        }))
+        runPersist(async () => {
+          await persistRemoveSet(setId)
+          await persistSetNumbers(
+            remaining.filter((set) => {
+              const prev = siblings.find((row) => row.id === set.id)
+              return prev != null && prev.setNumber !== set.setNumber
+            }),
+          )
+        })
       },
       removeSession: (sessionId) => {
         setGym((s) => ({
